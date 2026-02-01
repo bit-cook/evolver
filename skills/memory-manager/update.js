@@ -2,97 +2,117 @@ const fs = require('fs');
 const path = require('path');
 const { program } = require('commander');
 
+// MAX RETRIES for file lock contention
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 200;
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function normalize(text) {
     // Normalize line endings to LF and strip trailing whitespace per line
     return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(line => line.trimEnd()).join('\n');
 }
 
-function safeUpdate(filePath, options) {
+async function safeUpdate(filePath, options) {
     const absPath = path.resolve(filePath);
     
-    // 1. Read fresh content (Atomic Read start)
-    if (!fs.existsSync(absPath)) {
-        console.error(`File not found: ${absPath}`);
-        process.exit(1);
-    }
-    
-    let content = fs.readFileSync(absPath, 'utf8');
-    let originalContent = content;
-
-    // 2. Normalize (Strategy C)
-    content = normalize(content);
-
-    // 3. Apply changes (Strategy B: In-memory modify)
-    let modified = false;
-
-    if (options.operation === 'replace') {
-        const search = (options.old !== undefined) ? options.old : options.search;
-        const replace = (options.new !== undefined) ? options.new : options.replace;
-        
-        if (!search || replace === undefined) {
-            console.error("Replace operation requires --old/--search and --new/--replace");
-            process.exit(1);
-        }
-
-        // Try exact match first (on normalized content)
-        if (content.includes(search)) {
-            content = content.replace(search, replace);
-            modified = true;
-            console.log("Status: Exact match successful.");
-        } else {
-            // Fallback: Normalized fuzzy search? 
-            // For now, let's treat "old text not found" as a failure trigger for "Automatic Downgrade" logic
-            // But wait, if I'm the script, I AM the downgrade mechanism if I supply regex.
+    let attempts = 0;
+    while (attempts < MAX_RETRIES) {
+        attempts++;
+        try {
+            // 1. Read fresh content
+            if (!fs.existsSync(absPath)) {
+                if (options.operation === 'create') {
+                    fs.writeFileSync(absPath, '', 'utf8');
+                } else {
+                    console.error(`File not found: ${absPath}`);
+                    process.exit(1);
+                }
+            }
             
-            // Try normalizing the search string too
-            const normSearch = normalize(search);
-            if (content.includes(normSearch)) {
-                content = content.replace(normSearch, replace);
+            let content = fs.readFileSync(absPath, 'utf8');
+            let originalContent = content;
+
+            // 2. Normalize
+            content = normalize(content);
+
+            // 3. Apply changes
+            let modified = false;
+
+            if (options.operation === 'replace') {
+                const search = (options.old !== undefined) ? options.old : options.search;
+                const replace = (options.new !== undefined) ? options.new : options.replace;
+                
+                if (search === undefined || replace === undefined) {
+                    console.error("Replace operation requires --old/--search and --new/--replace");
+                    process.exit(1);
+                }
+
+                // Try exact match first
+                if (content.includes(search)) {
+                    content = content.replace(search, replace);
+                    modified = true;
+                    console.log("Status: Exact match successful.");
+                } else {
+                    // Try normalized match
+                    const normSearch = normalize(search);
+                    if (content.includes(normSearch)) {
+                        content = content.replace(normSearch, replace);
+                        modified = true;
+                        console.log("Status: Normalized match successful.");
+                    } else {
+                        console.error("Error: Could not find target text even after normalization.");
+                        console.log("Diagnostics - Target text start:", search.substring(0, 50));
+                        process.exit(1);
+                    }
+                }
+            } else if (options.operation === 'append') {
+                if (!options.content) {
+                    console.error("Append requires --content");
+                    process.exit(1);
+                }
+                if (!content.endsWith('\n') && content.length > 0) content += '\n';
+                content += options.content + '\n';
                 modified = true;
-                console.log("Status: Normalized match successful.");
+                console.log("Status: Append successful.");
+            }
+
+            // 4. Write back with Retry Logic
+            if (modified) {
+                // Check if file changed on disk while we were processing (Race Condition Check)
+                const currentFileContent = fs.readFileSync(absPath, 'utf8');
+                if (normalize(currentFileContent) !== normalize(originalContent)) {
+                    throw new Error("File changed on disk during processing (Race Condition). Retrying...");
+                }
+
+                fs.writeFileSync(absPath, content, 'utf8');
+                console.log("Success: Memory file updated safely.");
+                return; // Success
             } else {
-                console.error("Error: Could not find target text even after normalization.");
-                console.log("Diagnostics - Target text start:", search.substring(0, 50));
-                console.log("Diagnostics - File content preview:", content.substring(0, 100));
+                console.log("No changes needed.");
+                return;
+            }
+
+        } catch (e) {
+            console.error(`Attempt ${attempts} failed: ${e.message}`);
+            if (attempts < MAX_RETRIES) {
+                const delay = RETRY_DELAY_MS * attempts + Math.floor(Math.random() * 100);
+                console.log(`Retrying in ${delay}ms...`);
+                await sleep(delay);
+            } else {
+                console.error("Max retries exceeded. Aborting update.");
                 process.exit(1);
             }
         }
-    } else if (options.operation === 'append') {
-        if (!options.content) {
-            console.error("Append requires --content");
-            process.exit(1);
-        }
-        // Ensure ends with newline before appending
-        if (!content.endsWith('\n')) content += '\n';
-        content += options.content + '\n';
-        modified = true;
-        console.log("Status: Append successful.");
-    }
-
-    // 4. Write back (Strategy B: Atomic Write)
-    if (modified) {
-        // Simple check: did it actually change?
-        if (content === normalize(originalContent)) {
-             console.log("Warning: Content unchanged after operation.");
-        }
-        
-        try {
-            fs.writeFileSync(absPath, content, 'utf8');
-            console.log("Success: Memory file updated safely.");
-        } catch (e) {
-            console.error(`Write failed: ${e.message}`);
-            // Strategy D: Retry logic could go here, but fs.writeFileSync is blocking and atomic-ish on many OSs for replace
-            process.exit(1);
-        }
-    } else {
-        console.log("No changes applied.");
     }
 }
 
 program
   .requiredOption('-f, --file <path>', 'Target file path', 'MEMORY.md')
-  .requiredOption('-o, --operation <type>', 'Operation: replace | append')
-  .option('--old <text>', 'Text to replace (exact or normalized)')
+  .requiredOption('-o, --operation <type>', 'Operation: replace | append | create')
+  .option('--old <text>', 'Text to replace')
   .option('--new <text>', 'Replacement text')
   .option('--search <text>', 'Alias for --old')
   .option('--replace <text>', 'Alias for --new')
@@ -104,30 +124,9 @@ program
 
 const options = program.opts();
 
-// Handle file input for content args to avoid shell escaping hell
-if (options.contentFile) {
-    try {
-        options.content = fs.readFileSync(options.contentFile, 'utf8').trim(); // Trim to avoid accidental newlines
-    } catch (e) {
-        console.error(`Failed to read content file: ${e.message}`);
-        process.exit(1);
-    }
-}
-if (options.oldFile) {
-    try {
-        options.old = fs.readFileSync(options.oldFile, 'utf8').trim();
-    } catch (e) {
-        console.error(`Failed to read old file: ${e.message}`);
-        process.exit(1);
-    }
-}
-if (options.newFile) {
-    try {
-        options.new = fs.readFileSync(options.newFile, 'utf8').trim();
-    } catch (e) {
-        console.error(`Failed to read new file: ${e.message}`);
-        process.exit(1);
-    }
-}
+// Handle file inputs
+if (options.contentFile) options.content = fs.readFileSync(options.contentFile, 'utf8').trim();
+if (options.oldFile) options.old = fs.readFileSync(options.oldFile, 'utf8').trim();
+if (options.newFile) options.new = fs.readFileSync(options.newFile, 'utf8').trim();
 
 safeUpdate(options.file, options);

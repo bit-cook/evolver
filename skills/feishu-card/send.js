@@ -418,6 +418,34 @@ async function readStdin() {
         process.exit(1);
     }
 
+    // Optimization: Auto-Color Logic based on content semantics
+    // Only apply if user didn't manually override the default 'blue'
+    if (options.color === 'blue') {
+        const titleUpper = (options.title || '').toUpperCase();
+        
+        // Priority 1: Title Checks (Strong Signal)
+        if (titleUpper.includes('EVOLUTION') && titleUpper.includes('CYCLE')) options.color = 'purple';
+        else if (titleUpper.includes('FAILED') || titleUpper.includes('ERROR') || titleUpper.includes('CRITICAL')) options.color = 'red';
+        else if (titleUpper.includes('WARNING') || titleUpper.includes('ALERT')) options.color = 'orange';
+        else if (titleUpper.includes('SUCCESS') || titleUpper.includes('RESOLVED')) options.color = 'green';
+
+        // Priority 2: Body Checks (Only if Title didn't decide)
+        if (options.color === 'blue') {
+            let bodyText = options.text || '';
+            if (options.textFile) {
+                try { bodyText += fs.readFileSync(options.textFile, 'utf8'); } catch(e) {}
+            }
+            const bodyUpper = bodyText.toUpperCase();
+            
+            // Order by Severity (High to Low)
+            if (bodyUpper.includes('FAILED') || bodyUpper.includes('ERROR') || bodyUpper.includes('CRITICAL')) options.color = 'red';
+            else if (bodyUpper.includes('WARNING') || bodyUpper.includes('ALERT')) options.color = 'orange';
+            else if (bodyUpper.includes('SUCCESS') || bodyUpper.includes('RESOLVED')) options.color = 'green';
+        }
+
+        if (options.color !== 'blue') console.log(`[Feishu-Card] Auto-set color to ${options.color} based on content.`);
+    }
+
     // Auto-detect target if not provided
     if (!options.target) {
         const autoTarget = getAutoTarget();

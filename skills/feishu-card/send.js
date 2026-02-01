@@ -265,7 +265,7 @@ async function sendPlainTextFallback(token, receiveIdType, receiveId, text, titl
 }
 
 program
-  .requiredOption('-t, --target <open_id>', 'Target User Open ID')
+  .option('-t, --target <open_id>', 'Target User Open ID (Auto-detected if omitted)')
   .option('-x, --text <markdown>', 'Card body text (Markdown)')
   .option('-f, --text-file <path>', 'Read card body text from file')
   .option('--title <text>', 'Card header title')
@@ -279,6 +279,46 @@ program
 
 program.parse(process.argv);
 const options = program.opts();
+
+// Helper: Auto-detect target
+function getAutoTarget() {
+    // 1. Explicitly provided via CLI (already handled, but checked here for clarity)
+    if (options.target) return options.target;
+
+    // 2. Environment Variable (Priority)
+    if (process.env.FEISHU_TARGET_ID) return process.env.FEISHU_TARGET_ID;
+
+    // 3. Shared Context File (New Standard)
+    try {
+        const contextPath = path.resolve(__dirname, '../../memory/context.json');
+        if (fs.existsSync(contextPath)) {
+            const context = JSON.parse(fs.readFileSync(contextPath, 'utf8'));
+            if (context.last_active_user) return context.last_active_user;
+            if (context.last_active_chat) return context.last_active_chat;
+        }
+    } catch (e) {}
+
+    // 4. Menu Events Log (Fallback to last interactor)
+    try {
+        const menuPath = path.resolve(__dirname, '../../memory/menu_events.json');
+        if (fs.existsSync(menuPath)) {
+            const events = JSON.parse(fs.readFileSync(menuPath, 'utf8'));
+            if (Array.isArray(events) && events.length > 0) {
+                const lastEvent = events[events.length - 1];
+                // Check raw structure first for most detail
+                if (lastEvent.raw && lastEvent.raw.event && lastEvent.raw.event.operator && lastEvent.raw.event.operator.operator_id) {
+                     return lastEvent.raw.event.operator.operator_id.open_id;
+                }
+                if (lastEvent.userId && lastEvent.userId !== 'unknown') return lastEvent.userId;
+            }
+        }
+    } catch (e) {}
+    
+    // 5. Master ID (Last Resort)
+    if (process.env.MASTER_ID) return process.env.MASTER_ID;
+
+    return null;
+}
 
 async function readStdin() {
     const { stdin } = process;
@@ -303,6 +343,21 @@ async function readStdin() {
     if (!options.text && !options.textFile && !options.imagePath) {
         console.error('Error: No content provided.');
         process.exit(1);
+    }
+
+    // Auto-detect target if not provided
+    if (!options.target) {
+        const autoTarget = getAutoTarget();
+        if (autoTarget) {
+            console.log(`[Feishu-Card] Auto-detected target: ${autoTarget}`);
+            options.target = autoTarget;
+        } else {
+            console.error('Error: Target not specified and could not be auto-detected.');
+            console.error('  - Provide via -t/--target');
+            console.error('  - Set FEISHU_TARGET_ID env var');
+            console.error('  - Or ensure memory/context.json exists');
+            process.exit(1);
+        }
     }
 
     sendCard(options);

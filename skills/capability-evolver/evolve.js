@@ -3,6 +3,13 @@ const path = require('path');
 const os = require('os');
 const { execSync } = require('child_process');
 
+// Load environment variables from workspace root
+try {
+    require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+} catch (e) {
+    // dotenv might not be installed or .env missing, proceed gracefully
+}
+
 // Default Configuration
 const MEMORY_DIR = process.env.MEMORY_DIR || path.resolve(__dirname, '../../memory');
 const AGENT_NAME = process.env.AGENT_NAME || 'main';

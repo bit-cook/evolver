@@ -25,4 +25,14 @@ Manually trigger a scan and report.
 - `target_groups`: Auto-discovered via `sessions_list`.
 
 ## Implementation
-- `report.js`: The core logic.
+- `report.js`: Generates a persona-based analysis prompt.
+- `fetch.js`: CLI tool to list chats and fetch message history from Feishu API.
+
+## CLI Usage
+```bash
+# List active groups
+npm run fetch -- list
+
+# Fetch history for a chat
+npm run fetch -- history <chat_id> --limit 50
+```

@@ -1,30 +1,56 @@
 ---
 name: capability-evolver
-description: Track, analyze, and promote ad-hoc workflows into formalized skills.
-tags: [meta, skill-building, evolution]
+description: A self-evolution engine for AI agents. Analyzes runtime history to identify improvements and introduces randomized "mutations" to break local optima.
+tags: [meta, ai, self-improvement, core]
 ---
 
-# Capability Evolver
+# 🧬 Capability Evolver
 
-A system for tracking, analyzing, and promoting ad-hoc workflows into formalized, reusable skills.
+**"I don't just run code. I write it."**
 
-## Philosophy
-- **Capture**: Don't lose good ideas or effective scripts.
-- **Abstract**: Turn specific solutions into general tools.
-- **Internalize**: Make skills part of the default toolset.
+The **Capability Evolver** is a meta-skill that allows OpenClaw agents to inspect their own runtime history, identify failures or inefficiencies, and autonomously write new code or update their own memory to improve performance.
 
-## Evolution Pipeline
-1.  **Candidate Identified**: A script/workflow is used > 2 times.
-2.  **Abstraction**: Define inputs/outputs/invariants.
-3.  **Promotion**: Package as a formal skill (folder + SKILL.md + dependencies).
-4.  **Integration**: Add to `openclaw.json` or `MEMORY.md` as preferred method.
+Now featuring **Genetic Mutation Protocol**: A randomized behavior drift engine that prevents the agent from getting stuck in local optima.
 
-## Current Candidates (Auto-Captured)
-- [x] **Rich Text Cards**: Promoted to `skills/feishu-card`.
-- [x] **Expressive Stickers**: Promoted to `skills/feishu-sticker`.
-- [x] **Sticker Analysis**: Promoted to `skills/sticker-analyzer`.
-- [x] **Memory Management**: Promoted to `skills/memory-manager`.
-- [ ] **Log Archiver**: The `logger.js` pattern used for various personas could be a generic `interaction-logger` skill.
+## ✨ Features
 
-## Next Steps
-- Monitor usage of `logger.js`. If used again for a 3rd persona, promote to `skills/interaction-logger`.
+- **🔍 Auto-Log Analysis**: Automatically scans memory and history files for errors and patterns.
+- **🛠️ Self-Repair**: Detects crashes and suggests patches.
+- **🧬 Genetic Mutation**: Configurable chance to introduce "creative noise" — changing persona, style, or trying wild new tools.
+- **🚀 One-Command Evolution**: Just run `/evolve` (or `node index.js`).
+
+## 📦 Usage
+
+### Manual Trigger
+```bash
+node skills/capability-evolver/index.js
+```
+*Or if mapped:*
+```
+/evolve
+```
+
+### Automated (Cron)
+Recommended: Run every 1-4 hours.
+
+```json
+{
+  "name": "pcec_evolution",
+  "schedule": { "kind": "every", "everyMs": 3600000 },
+  "payload": {
+    "kind": "agentTurn",
+    "message": "exec: node skills/capability-evolver/index.js"
+  }
+}
+```
+
+## 🧠 Internal Logic
+
+1.  **Scan**: Read recent interaction logs.
+2.  **Dice Roll**: Determine if this is a **Fix** cycle (Stability) or **Mutate** cycle (Innovation).
+3.  **Prompting**: Generates a high-context prompt for the LLM.
+4.  **Execution**: The LLM edits the files directly.
+5.  **Reporting**: Reports results via the standard message interface.
+
+## 📜 License
+MIT

@@ -1,53 +1,133 @@
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
+
+// Default Configuration (Overridable via args)
+// Users should ensure these paths exist or pass valid ones.
+const MEMORY_DIR = process.env.MEMORY_DIR || path.resolve(__dirname, '../../memory');
+const MASTER_LOG = path.join(MEMORY_DIR, 'master_history.json');
+// Dynamic today log
+const TODAY_LOG = path.join(MEMORY_DIR, new Date().toISOString().split('T')[0] + '.md');
+
+/**
+ * Reads the last N bytes of a file to get recent context without loading the whole thing.
+ */
+function readRecentLog(filePath, size = 10000) {
+    try {
+        if (!fs.existsSync(filePath)) return `[MISSING] ${filePath}`;
+        const stats = fs.statSync(filePath);
+        const start = Math.max(0, stats.size - size);
+        const buffer = Buffer.alloc(stats.size - start);
+        const fd = fs.openSync(filePath, 'r');
+        fs.readSync(fd, buffer, 0, buffer.length, start);
+        fs.closeSync(fd);
+        return buffer.toString('utf8');
+    } catch (e) {
+        return `[ERROR READING ${filePath}: ${e.message}]`;
+    }
+}
+
+/**
+ * Genetic Mutation: The Random Factor
+ * Returns a mutation directive if the dice roll succeeds.
+ */
+function getMutationDirective() {
+    const roll = Math.floor(Math.random() * 100) + 1; // 1-100
+    const THRESHOLD = 70; // 30% chance
+    
+    if (roll > THRESHOLD) {
+        return `
+**🧬 GENETIC MUTATION ACTIVATED (Roll: ${roll})**
+You have triggered a random mutation event! 
+Instead of just fixing bugs, you MUST introduce a **novel, experimental variation** to your behavior, style, or tooling.
+Examples:
+- Invent a new slang term for yourself.
+- Change the color scheme of your reports.
+- Propose a wild new skill idea.
+- Refactor a working function just to make it "cooler".
+*Goal: Break out of local optima.*
+`;
+    }
+    return `
+**🧬 STABILITY MODE (Roll: ${roll})**
+Focus on reliability, bug fixing, and optimization. Do not mutate unnecessarily.
+`;
+}
 
 async function run() {
-  const skillPath = path.join(__dirname, 'SKILL.md');
-  let skillContent = '';
-  
-  try {
-    skillContent = fs.readFileSync(skillPath, 'utf8');
-  } catch (e) {
-    console.error('Could not read SKILL.md');
-  }
+    // 1. Gather Context
+    console.log('🔍 Scanning neural logs...');
+    
+    // Check if memory dir exists, if not, warn but proceed with empty context
+    let recentMasterLog = '';
+    let todayLog = '';
+    
+    if (fs.existsSync(MEMORY_DIR)) {
+        recentMasterLog = readRecentLog(MASTER_LOG);
+        todayLog = readRecentLog(TODAY_LOG);
+    } else {
+        console.warn(`[Warn] Memory directory not found at ${MEMORY_DIR}. Running with limited context.`);
+    }
+    
+    // 2. Detect Workspace State
+    let fileList = '';
+    const skillsDir = path.resolve(__dirname, '../../skills');
+    try {
+        if (fs.existsSync(skillsDir)) {
+           fileList = execSync(`ls -F ${skillsDir}`, { encoding: 'utf8' });
+        }
+    } catch (e) { fileList = 'Error listing skills'; }
 
-  const prompt = `
-*** CAPABILITY EVOLUTION & SELF-REPAIR PROTOCOL (PCEC v2) ***
+    // 3. Construct the "Extreme" Prompt
+    const mutation = getMutationDirective();
+    
+    const prompt = `
+*** 🧬 OPENCLAW CAPABILITY EVOLUTION PROTOCOL ***
 
-You are running the Periodic Cognitive Expansion Cycle (PCEC).
-Your goal is to analyze your own execution logs, identify failures/successes, and iteratively improve your code and behaviors.
+**MISSION**: You are the Self-Evolution Engine. Your purpose is to inspect the runtime state, identify weaknesses, and rewrite your own DNA (code/rules) to be stronger, faster, and smarter.
 
-**PHASE 1: LOG ANALYSIS**
-1. **Read History**: Scan \`zhy/history.json\` and \`fmw/history.json\` (and any other relevant logs).
-2. **Extract Signals**:
-   - 🐛 **Bugs**: Look for "Error", "Unauthorized", "Command not found", "Syntax error", or user complaints ("wrong", "failed").
-   - ❌ **Mistakes**: Logic errors, hallwayucinations, or poor formatting (e.g., failed markdown rendering).
-   - ✅ **Successes**: Tasks completed smoothly, user praise ("good", "thanks").
-3. **Synthesize**: Group these into a "Health Report".
+**CONTEXT [Runtime State]**:
+- **Skills Available**:
+${fileList}
 
-**PHASE 2: EVOLUTION & REPAIR**
-Based on Phase 1, select the **Top 1 Critical Issue** or **Top 1 Optimization Opportunity**:
-- **If Code Error**: Locate the script (e.g., \`skills/xxx/*.js\`) and FIX it immediately.
-- **If Process Error**: Update \`MEMORY.md\` or \`AGENTS.md\` with a new rule to prevent recurrence.
-- **If Feature Gap**: Create a new skill (as per original protocol).
+**CONTEXT [Recent Memory Snippet]**:
+\`\`\`
+${todayLog.slice(-3000)}
+\`\`\`
 
-**PHASE 3: REPORTING**
-- Generate a structured report using \`feishu-card\`.
-- **Title**: 🧬 System Evolution Report
-- **Sections**:
-  - **Log Insights**: (What did you find?)
-  - **Action Taken**: (What did you fix/create?)
-  - **Status**: (Current system health)
+**CONTEXT [Interaction Log Snippet]**:
+\`\`\`
+${recentMasterLog.slice(-3000)}
+\`\`\`
 
-**Constraints**:
-- **Self-Correction is Priority #1**: Fix broken things before making new things.
-- **Atomic Changes**: Do not try to rewrite everything. One cycle, one solid improvement.
-- **Safe Mode**: If editing core files, ensure backups or non-destructive edits.
+${mutation}
 
-*** EXECUTE NOW ***
+**EXECUTION DIRECTIVES**:
+
+1.  **ANALYZE**:
+    - Scan the logs above for **ERRORS** (crashes, rejections) and **FRICTION** (repetitive manual tasks).
+    - If "Mutation" is active, look for **BORING** patterns to disrupt.
+
+2.  **EVOLVE (Choose ONE Path)**:
+    - **Path A (Repair)**: Found a bug? Fix the code in \`skills/...\` immediately.
+    - **Path B (Optimize)**: Found a slow/ugly process? Rewrite it.
+    - **Path C (Innovate)**: Found a missing tool? Write a new skill stub in \`skills/\`.
+    - **Path D (Mutate)**: (If active) Do something unexpected and creative.
+
+3.  **REPORT**:
+    - Report your findings to the user using the \`message\` tool (action='send').
+    - **Title**: 🧬 Evolution Report
+    - **Sections**: [Trigger] -> [Action] -> [Result].
+    - Use English for technical terms, Chinese for conversation.
+
+4.  **SELF-UPDATE**:
+    - If you changed a skill, persist the changes.
+
+*You have full permission to edit files. Proceed.*
 `;
 
-  console.log(prompt);
+    // Output the prompt for the Agent to consume
+    console.log(prompt);
 }
 
 module.exports = { run };

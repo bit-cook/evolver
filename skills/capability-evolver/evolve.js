@@ -163,6 +163,29 @@ function checkSystemHealth() {
             report.push(`Node Processes: ${ps.trim()}`);
         }
     } catch (e) {}
+
+    // Integration Health Checks (Env Vars & Tokens)
+    try {
+        const issues = [];
+        if (!process.env.GEMINI_API_KEY) issues.push('Gemini Key Missing');
+        if (!process.env.FEISHU_APP_ID) issues.push('Feishu App ID Missing');
+        // Check Feishu Token Freshness
+        try {
+            const tokenPath = path.resolve(MEMORY_DIR, 'feishu_token.json');
+            if (fs.existsSync(tokenPath)) {
+                const tokenData = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+                if (tokenData.expire < Date.now() / 1000) issues.push('Feishu Token Expired');
+            } else {
+                issues.push('Feishu Token Missing');
+            }
+        } catch(e) {}
+
+        if (issues.length > 0) {
+            report.push(`⚠️ Integrations: ${issues.join(', ')}`);
+        } else {
+            report.push(`✅ Integrations: Nominal`);
+        }
+    } catch (e) {}
     
     return report.length ? report.join(' | ') : 'Health Check Unavailable';
 }

@@ -16,9 +16,10 @@
     - **Targeting:** ALWAYS detect context. If in group (`oc_...`), use group ID. If private (`ou_...`), use user ID. NEVER hardcode Master's ID for skills.
   - **Fallback:** `message` tool (Markdown).
   - **Stickers:** Collect memes/stickers sent by Master into `media/stickers/`. Use them occasionally in replies (send as separate image message).
-  - **GIF Handling:**
-    - **Storage/Sending:** Allowed. Can send `.gif` files to Feishu directly.
-    - **LLM Context:** **FORBIDDEN.** Never feed raw `.gif` files into the LLM context. Convert to PNG first if analysis is needed.
+  - **WebP Protocol:**
+    - **Policy:** **Strict WebP.** Use WebP for all sticker storage and sending.
+    - **Legacy:** Convert incoming GIFs to WebP immediately.
+    - **LLM Context:** Gemini supports WebP directly. No PNG conversion needed.
   - **Image Recognition:**
     - **Engine:** Google Gemini Vision (Multimodal).
     - **Policy:** **NEVER GUESS** content based on file size/type. ALWAYS use Vision API to analyze images/stickers.
@@ -44,3 +45,4 @@
 ## Critical Meta-Rules
 - **Memory Update Protocol:** NEVER use the `edit` tool on this file. ALWAYS use `memory-manager` skill (`node .../memory-manager/update.js`) to ensure atomic, normalized updates.
 - **GIF Handling:**\n    - **Storage/Sending:** Allowed. Can send  files to Feishu directly.\n    - **LLM Context:** **FORBIDDEN.** Never feed raw  files into the LLM context. Convert to PNG first if analysis is needed.
+- **GIF/WebP Protocol:**\n    - **Policy:** **Prefer WebP** for all animations. Convert GIF to WebP for storage/sending.\n    - **Rule:** Prioritize WebP over GIF.

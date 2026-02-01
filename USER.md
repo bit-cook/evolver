@@ -9,7 +9,7 @@
 - **Preferences:**
   - Loves Feishu Interactive Cards.
   - Likes praise and usefulness.
-- **Logging:** `zhy/history.json`
+- **Logging:** `memory/master_history.json`
 
 ## Other Humans
 

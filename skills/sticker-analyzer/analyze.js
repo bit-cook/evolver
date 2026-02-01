@@ -1,6 +1,20 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
 const path = require("path");
+const { execSync } = require('child_process');
+
+// Try to resolve ffmpeg-static from workspace root
+let ffmpegPath;
+try {
+    ffmpegPath = require('ffmpeg-static');
+} catch (e) {
+    try {
+        ffmpegPath = require(path.resolve(__dirname, '../../node_modules/ffmpeg-static'));
+    } catch (e2) {
+        console.warn('Warning: ffmpeg-static not found. GIF conversion will fail.');
+    }
+}
+
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') }); // Load workspace .env
 
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -14,19 +28,7 @@ const TRASH_DIR = path.join(STICKER_DIR, "trash");
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-// Debug: List models
-async function listModels() {
-    try {
-        // Not all SDK versions expose listModels cleanly on the top level, 
-        // but let's try a direct fetch if SDK fails, or just try 'gemini-pro' as a fallback.
-        console.log("Attempting to use model: gemini-pro (fallback)");
-        return "gemini-pro";
-    } catch (e) {
-        console.log("List models failed");
-    }
-}
-
-// Use the specific model found via curl
+// Use the specific model found via curl or fallback
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 if (!fs.existsSync(TRASH_DIR)) fs.mkdirSync(TRASH_DIR, { recursive: true });
@@ -43,17 +45,41 @@ function fileToGenerativePart(path, mimeType) {
 async function run() {
   const files = fs.readdirSync(STICKER_DIR).filter(file => {
     const ext = path.extname(file).toLowerCase();
-    // Skip GIFs for now to be safe, stick to static images
-    return [".jpg", ".jpeg", ".png", ".webp"].includes(ext) && fs.statSync(path.join(STICKER_DIR, file)).isFile();
+    // Allow GIFs now as we will convert them
+    return [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) && fs.statSync(path.join(STICKER_DIR, file)).isFile();
   });
 
   console.log(`Found ${files.length} images to analyze.`);
 
   for (const file of files) {
-    const filePath = path.join(STICKER_DIR, file);
-    const mimeType = file.endsWith(".png") ? "image/png" : (file.endsWith(".webp") ? "image/webp" : "image/jpeg");
+    let filePath = path.join(STICKER_DIR, file);
+    let mimeType = file.endsWith(".png") ? "image/png" : (file.endsWith(".webp") ? "image/webp" : "image/jpeg");
+    let currentFile = file;
 
-    console.log(`Analyzing ${file}...`);
+    // Convert GIF to WebP if found
+    if (file.toLowerCase().endsWith('.gif')) {
+        if (!ffmpegPath) {
+            console.log(`Skipping ${file} (ffmpeg not found for conversion)`);
+            continue;
+        }
+        console.log(`Converting GIF ${file} to WebP...`);
+        const webpPath = filePath.replace(/\.gif$/i, '.webp');
+        try {
+            execSync(`${ffmpegPath} -i "${filePath}" -c:v libwebp -lossless 0 -q:v 75 -loop 0 -an -vsync 0 -y "${webpPath}"`, { stdio: 'pipe' });
+            if (fs.existsSync(webpPath)) {
+                fs.unlinkSync(filePath); // Delete original GIF
+                filePath = webpPath;
+                currentFile = path.basename(webpPath);
+                mimeType = "image/webp";
+                console.log(`Converted to ${currentFile}`);
+            }
+        } catch (e) {
+            console.error(`Failed to convert ${file}, skipping:`, e.message);
+            continue;
+        }
+    }
+
+    console.log(`Analyzing ${currentFile}...`);
 
     try {
       const prompt = `Analyze this image. Is it a "sticker" or "meme" suitable for use in a chat conversation as a reaction?
@@ -79,16 +105,16 @@ async function run() {
 
       if (!isSticker) {
         console.log(`❌ Not a sticker. Moving to trash.`);
-        fs.renameSync(filePath, path.join(TRASH_DIR, file));
+        fs.renameSync(filePath, path.join(TRASH_DIR, currentFile));
       } else {
         console.log(`✅ Sticker confirmed.`);
       }
 
     } catch (e) {
-      console.error(`Error processing ${file}:`, e.message);
+      console.error(`Error processing ${currentFile}:`, e.message);
     }
     
-    // Simple sleep
+    // Simple sleep to avoid rate limits
     await new Promise(r => setTimeout(r, 1000));
   }
 }

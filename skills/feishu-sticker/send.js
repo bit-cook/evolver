@@ -344,31 +344,86 @@ program
   .parse(process.argv);
 
 function getAutoTarget() {
-    // 1. Env Var (Highest Priority)
+    // 1. Explicitly provided via CLI
+    if (program.opts().target) return program.opts().target;
+
+    // 2. Environment Variable (Priority)
     if (process.env.FEISHU_TARGET_ID) return process.env.FEISHU_TARGET_ID;
 
-    // 2. Shared Context (Active Session)
+    // 3. Shared Context File (New Standard)
     try {
         const contextPath = path.resolve(__dirname, '../../memory/context.json');
         if (fs.existsSync(contextPath)) {
             const context = JSON.parse(fs.readFileSync(contextPath, 'utf8'));
-            if (context.last_target_id) return context.last_target_id;
-            // Fallback to interaction-logger fields
-            if (context.last_active_chat) return context.last_active_chat;
-            if (context.last_active_user) return context.last_active_user;
+            
+            // Priority: Group Chat (oc_) > User (ou_)
+            if (context.last_active_chat && context.last_active_chat.startsWith('oc_')) {
+                console.log(`[Feishu-Sticker] Target Source: context.json (Group: ${context.last_active_chat})`);
+                return context.last_active_chat;
+            }
+            
+            if (context.last_active_user) {
+                console.log(`[Feishu-Sticker] Target Source: context.json (User: ${context.last_active_user})`);
+                return context.last_active_user;
+            }
+
+            if (context.last_active_chat) {
+                console.log(`[Feishu-Sticker] Target Source: context.json (Chat: ${context.last_active_chat})`);
+                return context.last_active_chat;
+            }
         }
     } catch (e) {}
 
-    // 3. Last Menu Interaction (Fallback)
+    // 4. Menu Events Log (Fallback to last interactor)
     try {
         const menuPath = path.resolve(__dirname, '../../memory/menu_events.json');
         if (fs.existsSync(menuPath)) {
-            const events = JSON.parse(fs.readFileSync(menuPath, 'utf8'));
-            if (events.length > 0) return events[events.length - 1].user_id;
+            // Optimization: Read only last 10KB to avoid parsing huge JSON array
+            const stats = fs.statSync(menuPath);
+            const size = stats.size;
+            const readSize = Math.min(size, 10240); // 10KB tail
+            const buffer = Buffer.alloc(readSize);
+            const fd = fs.openSync(menuPath, 'r');
+            fs.readSync(fd, buffer, 0, readSize, size - readSize);
+            fs.closeSync(fd);
+            const tail = buffer.toString('utf8');
+            
+            // Find last "open_id": "ou_..." OR "chat_id": "oc_..." (Group or User)
+            const matches = [...tail.matchAll(/"(?:open_id|chat_id|user_id|open_chat_id)"\s*:\s*"(o[uc]_[a-z0-9]+)"/g)];
+            if (matches.length > 0) {
+                 const lastId = matches[matches.length - 1][1];
+                 console.log(`[Feishu-Sticker] Target Source: menu_events.json (Tail Search: ${lastId})`);
+                 return lastId;
+            }
+        }
+    } catch (e) {
+        // Fallback to full read if optimization fails (unlikely)
+    }
+    
+    // 5. Parse USER.md for Master ID (Robust Fallback)
+    try {
+        const userMdPath = path.resolve(__dirname, '../../USER.md');
+        if (fs.existsSync(userMdPath)) {
+            const userMd = fs.readFileSync(userMdPath, 'utf8');
+            // Regex to find "Feishu ID: `ou_...`" under "Owner" or "Master" section
+            const masterMatch = userMd.match(/(?:Master|Owner).*?Feishu ID:.*?`(ou_[a-z0-9]+)`/s);
+            if (masterMatch && masterMatch[1]) {
+                console.log(`[Feishu-Sticker] Target Source: USER.md (Master: ${masterMatch[1]})`);
+                return masterMatch[1];
+            }
+            // Fallback: Just find the first "ou_" ID in the file if specific Master tag fails
+            const firstOu = userMd.match(/`(ou_[a-z0-9]+)`/);
+            if (firstOu && firstOu[1]) {
+                 console.log(`[Feishu-Sticker] Target Source: USER.md (First Found: ${firstOu[1]})`);
+                 return firstOu[1];
+            }
         }
     } catch (e) {}
+    
+    // 6. Master ID (Env Fallback)
+    if (process.env.MASTER_ID) return process.env.MASTER_ID;
 
-    // 4. Default to Master
+    console.log('[Feishu-Sticker] Target Source: Hardcoded Master (Fallback)');
     return 'ou_cdc63fe05e88c580aedead04d851fc04'; 
 }
 

@@ -1,6 +1,7 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto"); // Added for optimization
 const { execSync } = require('child_process');
 
 // Optimization: Cleaner FFmpeg resolution
@@ -45,6 +46,17 @@ const CONCURRENCY = 2;
 const BATCH_DELAY_MS = 4000;
 
 if (!fs.existsSync(TRASH_DIR)) fs.mkdirSync(TRASH_DIR, { recursive: true });
+
+function getFileHash(filePath) {
+    try {
+        const fileBuffer = fs.readFileSync(filePath);
+        const hashSum = crypto.createHash('md5');
+        hashSum.update(fileBuffer);
+        return hashSum.digest('hex');
+    } catch (e) {
+        return null;
+    }
+}
 
 function fileToGenerativePart(path, mimeType) {
   return {
@@ -92,6 +104,27 @@ async function analyzeFile(file, index) {
     } catch (e) {
         console.error(`[ ERROR ] Cannot stat ${file}`);
         return false;
+    }
+
+    // Optimization: Content-Based Deduplication (Save tokens!)
+    const fileHash = getFileHash(filePath);
+    if (fileHash) {
+        // Check if any *other* file in index shares this hash
+        // (We might be re-processing the same file if index didn't block it, but !index[file] usually blocks it.
+        // This catches renaming a file or uploading duplicate.)
+        const existingKey = Object.keys(index).find(k => index[k].hash === fileHash);
+        if (existingKey) {
+            const match = index[existingKey];
+            console.log(`[ CACHE ] ${file} is duplicate of ${existingKey} (Hash: ${fileHash.slice(0,6)}). Copying metadata.`);
+            index[file] = {
+                path: filePath, // Keep its own path
+                emotion: match.emotion,
+                keywords: match.keywords,
+                hash: fileHash,
+                addedAt: Date.now()
+            };
+            return true; // Done!
+        }
     }
 
     const ext = path.extname(file).toLowerCase();

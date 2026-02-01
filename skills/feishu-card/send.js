@@ -66,10 +66,15 @@ if (!APP_ID || !APP_SECRET) {
 }
 
 // Helper: Fetch with smart retry (retries only on network/server errors)
-async function fetchWithRetry(url, options, retries = 3) {
+async function fetchWithRetry(url, options, retries = 3, timeoutMs = 15000) {
     for (let i = 0; i < retries; i++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        const fetchOptions = { ...options, signal: controller.signal };
+
         try {
-            const res = await fetch(url, options);
+            const res = await fetch(url, fetchOptions);
+            clearTimeout(timeoutId);
             
             // Success: 2xx
             if (res.ok) return res;
@@ -97,6 +102,12 @@ async function fetchWithRetry(url, options, retries = 3) {
             throw new Error(`HTTP ${res.status} ${res.statusText}`);
 
         } catch (e) {
+            clearTimeout(timeoutId);
+            
+            if (e.name === 'AbortError') {
+                e.message = `Request timed out after ${timeoutMs}ms`;
+            }
+
             // Don't retry if we explicitly said "No Retry" (Client Error)
             // or if we already handled 429 logic above
             if (e.message.includes('(ReqID:')) {

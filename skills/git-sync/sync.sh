@@ -13,6 +13,13 @@ if ! flock -n 200; then
     exit 0
 fi
 
+# Optimization: Support --force flag to bypass throttling
+FORCE_SYNC=0
+if [ "$1" == "--force" ]; then
+    FORCE_SYNC=1
+    shift
+fi
+
 MSG="${1:-Auto-sync: Routine evolution update}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TIMEOUT_CMD="timeout 120s"
@@ -84,7 +91,7 @@ fi
 
 # Optimization: Skip fetch/pull if no commits and recently fetched (throttling)
 LAST_FETCH_FILE=".git/FETCH_HEAD"
-if [ "$COMMITTED" -eq 0 ] && [ -f "$LAST_FETCH_FILE" ]; then
+if [ "$COMMITTED" -eq 0 ] && [ -f "$LAST_FETCH_FILE" ] && [ "$FORCE_SYNC" -eq 0 ]; then
     # Get file modification time in seconds
     if [[ "$OSTYPE" == "darwin"* ]]; then
         LAST_FETCH=$(stat -f %m "$LAST_FETCH_FILE")

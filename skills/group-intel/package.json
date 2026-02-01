@@ -1,0 +1,12 @@
+{
+  "name": "group-intel",
+  "version": "1.0.0",
+  "description": "Periodically scans group chats, summarizes conversations, and reports intelligence.",
+  "main": "report.js",
+  "scripts": {
+    "report": "node report.js"
+  },
+  "keywords": ["feishu", "intel", "summary"],
+  "author": "OpenClaw Agent",
+  "license": "MIT"
+}

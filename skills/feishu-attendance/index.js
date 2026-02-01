@@ -69,6 +69,12 @@ async function main() {
       holidayCheckWarning = `⚠️ *Warning*: Holiday check failed (${e.message}). Assumed Workday.`;
   }
 
+  // Safety: If holiday check failed, DO NOT spam users with DMs. Only report to admin.
+  const safeMode = !!holidayCheckWarning;
+  if (safeMode) {
+      console.log("SAFE MODE ACTIVE: User DMs disabled due to holiday API failure.");
+  }
+
   try {
     // 1. Get all users
     console.log('Fetching users...');
@@ -112,10 +118,9 @@ async function main() {
       let isAbsent = false;
 
       if (records.length === 0) {
-        // No records
-        if (isWorkday) {
-            isAbsent = true; 
-        }
+        // No records usually means "No Shift" or "Rest Day" in Feishu.
+        // Do NOT mark as absent.
+        console.log(`[Info] ${userName}: No shift records found.`);
       } else {
         for (const record of records) {
            // Check In Result
@@ -128,21 +133,27 @@ async function main() {
         }
       }
 
-      // Prepare messages
+      // Prepare messages (Only send if !safeMode)
       if (isAbsent) {
         report.absent.push(userName);
         console.log(`[Absent] ${userName}`);
-        await sendMessage(userId, `[Attendance Alert] You are marked as ABSENT for ${dateStr}. Please submit a request if this is an error.`);
+        if (!safeMode) {
+            await sendMessage(userId, `[Attendance Alert] You are marked as ABSENT for ${dateStr}. Please submit a request if this is an error.`);
+        }
       } else {
         if (isLate) {
           report.late.push(userName);
           console.log(`[Late] ${userName}`);
-          await sendMessage(userId, `[Attendance Alert] You were LATE on ${dateStr}. Please be on time.`);
+          if (!safeMode) {
+              await sendMessage(userId, `[Attendance Alert] You were LATE on ${dateStr}. Please be on time.`);
+          }
         }
         if (isEarly) {
           report.early.push(userName);
           console.log(`[Early] ${userName}`);
-          await sendMessage(userId, `[Attendance Alert] You left EARLY on ${dateStr}.`);
+          if (!safeMode) {
+             await sendMessage(userId, `[Attendance Alert] You left EARLY on ${dateStr}.`);
+          }
         }
       }
     }

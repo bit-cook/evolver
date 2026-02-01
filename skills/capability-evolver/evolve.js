@@ -10,53 +10,52 @@ const AGENT_SESSIONS_DIR = path.join(os.homedir(), `.openclaw/agents/${AGENT_NAM
 const TODAY_LOG = path.join(MEMORY_DIR, new Date().toISOString().split('T')[0] + '.md');
 
 function formatSessionLog(jsonlContent) {
-    return jsonlContent.split('\n')
-        .filter(line => line.trim())
-        .map(line => {
-            try {
-                const data = JSON.parse(line);
-                if (data.type === 'message' && data.message) {
-                    const role = (data.message.role || 'unknown').toUpperCase();
-                    let content = '';
-                    if (Array.isArray(data.message.content)) {
-                         content = data.message.content.map(c => {
-                             if(c.type === 'text') return c.text;
-                             if(c.type === 'toolCall') return `[TOOL: ${c.name}]`;
-                             return '';
-                         }).join(' ');
-                    } else if (typeof data.message.content === 'string') {
-                        content = data.message.content;
-                    } else {
-                        content = JSON.stringify(data.message.content);
-                    }
-                    
-                    // Filter: Skip Heartbeats to save noise
-                    if (content.trim() === 'HEARTBEAT_OK') return null;
-                    if (content.includes('NO_REPLY')) return null;
+    const result = [];
+    const lines = jsonlContent.split('\n');
+    
+    for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+            const data = JSON.parse(line);
+            if (data.type === 'message' && data.message) {
+                const role = (data.message.role || 'unknown').toUpperCase();
+                let content = '';
+                if (Array.isArray(data.message.content)) {
+                        content = data.message.content.map(c => {
+                            if(c.type === 'text') return c.text;
+                            if(c.type === 'toolCall') return `[TOOL: ${c.name}]`;
+                            return '';
+                        }).join(' ');
+                } else if (typeof data.message.content === 'string') {
+                    content = data.message.content;
+                } else {
+                    content = JSON.stringify(data.message.content);
+                }
+                
+                // Filter: Skip Heartbeats to save noise
+                if (content.trim() === 'HEARTBEAT_OK') continue;
+                if (content.includes('NO_REPLY')) continue;
 
-                    // Clean up newlines for compact reading
-                    content = content.replace(/\n+/g, ' ').slice(0, 300);
-                    return `**${role}**: ${content}`;
-                }
-                if (data.type === 'tool_result' || (data.message && data.message.role === 'toolResult')) {
-                     // Filter: Skip generic success results or short uninformative ones
-                     // Only show error or significant output
-                     let resContent = '';
-                     if (data.tool_result && data.tool_result.output) resContent = data.tool_result.output;
-                     if (data.content) resContent = typeof data.content === 'string' ? data.content : JSON.stringify(data.content);
-                     
-                     if (resContent.length < 50 && (resContent.includes('success') || resContent.includes('done'))) return null;
-                     if (resContent.trim() === '') return null;
-                     
-                     // Improvement: Show snippet of result (especially errors) instead of hiding it
-                     const preview = resContent.replace(/\n+/g, ' ').slice(0, 200);
-                     return `[TOOL RESULT] ${preview}${resContent.length > 200 ? '...' : ''}`;
-                }
-                return null;
-            } catch (e) { return null; }
-        })
-        .filter(Boolean)
-        .join('\n');
+                // Clean up newlines for compact reading
+                content = content.replace(/\n+/g, ' ').slice(0, 300);
+                result.push(`**${role}**: ${content}`);
+            } else if (data.type === 'tool_result' || (data.message && data.message.role === 'toolResult')) {
+                    // Filter: Skip generic success results or short uninformative ones
+                    // Only show error or significant output
+                    let resContent = '';
+                    if (data.tool_result && data.tool_result.output) resContent = data.tool_result.output;
+                    if (data.content) resContent = typeof data.content === 'string' ? data.content : JSON.stringify(data.content);
+                    
+                    if (resContent.length < 50 && (resContent.includes('success') || resContent.includes('done'))) continue;
+                    if (resContent.trim() === '') continue;
+                    
+                    // Improvement: Show snippet of result (especially errors) instead of hiding it
+                    const preview = resContent.replace(/\n+/g, ' ').slice(0, 200);
+                    result.push(`[TOOL RESULT] ${preview}${resContent.length > 200 ? '...' : ''}`);
+            }
+        } catch (e) { continue; }
+    }
+    return result.join('\n');
 }
 
 function readRealSessionLog() {
@@ -198,8 +197,10 @@ The system detected instability in recent sessions.
 `;
     }
 
-    const THRESHOLD = 60; // Slightly more frequent mutations, but strictly useful ones
-    if (roll > THRESHOLD) {
+    let threshold = 60; // Slightly more frequent mutations, but strictly useful ones
+    if (errorCount === 0) threshold = 40; // Encourage evolution when stable
+
+    if (roll > threshold) {
         return `
 **🧬 GENETIC MUTATION ACTIVATED (Roll: ${roll})**
 System appears stable (${errorCount} recent errors). Evolution is permitted.

@@ -25,11 +25,13 @@ if (!API_KEY) {
 
 const STICKER_DIR = "/home/crishaocredits/.openclaw/media/stickers";
 const TRASH_DIR = path.join(STICKER_DIR, "trash");
+const INDEX_FILE = path.join(STICKER_DIR, 'index.json');
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-// Use the specific model found via curl or fallback
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+// Use the specific model found via curl or fallback, allow env override
+const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
 if (!fs.existsSync(TRASH_DIR)) fs.mkdirSync(TRASH_DIR, { recursive: true });
 
@@ -43,15 +45,59 @@ function fileToGenerativePart(path, mimeType) {
 }
 
 async function run() {
-  const files = fs.readdirSync(STICKER_DIR).filter(file => {
+  // Load Index
+  let index = {};
+  if (fs.existsSync(INDEX_FILE)) {
+      try { index = JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8')); } catch (e) {
+          console.error("Failed to parse index.json, starting fresh.");
+      }
+  }
+
+  let allFiles = [];
+  try {
+      allFiles = fs.readdirSync(STICKER_DIR);
+  } catch (e) {
+      console.error(`Error reading directory ${STICKER_DIR}:`, e.message);
+      return;
+  }
+  
+  // 1. Cleanup Stale Entries
+  let indexChanged = false;
+  const initialIndexCount = Object.keys(index).length;
+  for (const key of Object.keys(index)) {
+      if (!allFiles.includes(key)) {
+          console.log(`Removing stale index entry: ${key}`);
+          delete index[key];
+          indexChanged = true;
+      }
+  }
+  if (indexChanged) {
+      console.log(`Cleaned up ${initialIndexCount - Object.keys(index).length} stale entries.`);
+  }
+
+  // 2. Filter Files to Process
+  const filesToProcess = allFiles.filter(file => {
     const ext = path.extname(file).toLowerCase();
-    // Allow GIFs now as we will convert them
-    return [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext) && fs.statSync(path.join(STICKER_DIR, file)).isFile();
+    const isImage = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext);
+    let isFile = false;
+    try { isFile = fs.statSync(path.join(STICKER_DIR, file)).isFile(); } catch (e) { return false; }
+    
+    const isIndexed = index.hasOwnProperty(file);
+    
+    // Process if it's a valid image AND (not indexed OR it's a GIF that might need conversion)
+    return isImage && isFile && (!isIndexed || ext === '.gif'); 
   });
 
-  console.log(`Found ${files.length} images to analyze.`);
+  console.log(`Found ${filesToProcess.length} new or unindexed images to analyze.`);
 
-  for (const file of files) {
+  if (filesToProcess.length === 0 && !indexChanged) {
+      console.log("Nothing to do.");
+      // Just ensure index is saved if it changed
+      if (indexChanged) fs.writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2));
+      return;
+  }
+
+  for (const file of filesToProcess) {
     let filePath = path.join(STICKER_DIR, file);
     let mimeType = file.endsWith(".png") ? "image/png" : (file.endsWith(".webp") ? "image/webp" : "image/jpeg");
     let currentFile = file;
@@ -72,6 +118,12 @@ async function run() {
                 currentFile = path.basename(webpPath);
                 mimeType = "image/webp";
                 console.log(`Converted to ${currentFile}`);
+                
+                // If the converted file is already indexed, we can skip analysis
+                if (index[currentFile]) {
+                    console.log(`Converted file ${currentFile} is already indexed. Skipping analysis.`);
+                    continue; 
+                }
             }
         } catch (e) {
             console.error(`Failed to convert ${file}, skipping:`, e.message);
@@ -79,7 +131,7 @@ async function run() {
         }
     }
 
-    console.log(`Analyzing ${currentFile}...`);
+    console.log(`Analyzing ${currentFile}... Using ${MODEL_NAME}`);
 
     try {
       const prompt = `Analyze this image. 
@@ -115,16 +167,12 @@ async function run() {
       if (!analysis.is_sticker) {
         console.log(`❌ Not a sticker. Moving to trash.`);
         fs.renameSync(filePath, path.join(TRASH_DIR, currentFile));
+        // Remove from index if needed
+        if (index[currentFile]) delete index[currentFile]; 
       } else {
         console.log(`✅ Sticker confirmed: ${analysis.emotion} [${analysis.keywords?.join(', ')}]`);
         
-        // Update index
-        const indexFile = path.join(STICKER_DIR, 'index.json');
-        let index = {};
-        if (fs.existsSync(indexFile)) {
-            try { index = JSON.parse(fs.readFileSync(indexFile, 'utf8')); } catch (e) {}
-        }
-        
+        // Update index object
         index[currentFile] = {
             path: filePath,
             emotion: analysis.emotion,
@@ -132,7 +180,8 @@ async function run() {
             addedAt: Date.now()
         };
         
-        fs.writeFileSync(indexFile, JSON.stringify(index, null, 2));
+        // Write immediately to save progress
+        fs.writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2));
       }
 
     } catch (e) {
@@ -142,6 +191,9 @@ async function run() {
     // Simple sleep to avoid rate limits
     await new Promise(r => setTimeout(r, 1000));
   }
+  
+  // Final save
+  fs.writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2));
 }
 
 run();

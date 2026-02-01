@@ -56,10 +56,16 @@ fi
 # 4. Pull & Rebase (Safety First)
 # echo "Syncing with remote..."
 if ! git pull --rebase origin "$CURRENT_BRANCH" >/dev/null 2>&1; then
-  echo "⚠️ Rebase failed/conflict. Aborting rebase."
-  git rebase --abort
-  echo "Sync failed: Manual intervention required."
-  exit 1
+  echo "⚠️ Rebase failed. Aborting rebase and attempting standard merge..."
+  git rebase --abort 2>/dev/null || true
+  
+  # Fallback to Merge strategy
+  if ! git pull --no-rebase origin "$CURRENT_BRANCH"; then
+      echo "❌ Sync (Merge) failed: Manual intervention required."
+      exit 1
+  else
+      echo "✅ Merge successful (Fallback)."
+  fi
 fi
 
 # 5. Push with Retry

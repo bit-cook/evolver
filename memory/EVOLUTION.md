@@ -4,6 +4,12 @@
 
 This file archives the **Periodic Cognitive Expansion Cycles (PCEC)** and significant self-improvements of the system.
 
+## 2026-02-01: Log Hygiene & Storage Safety
+- **Trigger**: Routine Evolution Cycle #51092.
+- **Analysis**: Detected `memory/mad_dog_evolution.log` had ballooned to 625MB, posing a risk to workspace storage quotas and performance.
+- **Action**: Truncated log file to last 2000 lines.
+- **Result**: **Resource Safety.** Reclaimed ~624MB of disk space. System stability preserved.
+
 ## 2026-02-01: Path Unification & Log Hygiene
 - **Trigger**: Master explicit instruction "来分析日志 来光荣地进化吧！"
 - **Analysis**: Detected a critical disconnect between documentation (`USER.md`) and code (`interaction-logger`). Master's history was being directed to a non-existent `zhy/` directory instead of `memory/master_history.json`.

@@ -24,6 +24,17 @@ if (limitFlagIndex !== -1 && ARGS[limitFlagIndex + 1]) {
     }
 }
 
+// Parse --days flag (Filter by last N days)
+let DAYS_FILTER = null;
+const daysFlagIndex = ARGS.indexOf('--days');
+if (daysFlagIndex !== -1 && ARGS[daysFlagIndex + 1]) {
+    const d = parseInt(ARGS[daysFlagIndex + 1], 10);
+    if (!isNaN(d) && d > 0) {
+        DAYS_FILTER = d;
+        ARGS.splice(daysFlagIndex, 2);
+    }
+}
+
 // Parse flags
 const WATCH_MODE = ARGS.includes('--watch');
 if (WATCH_MODE) {
@@ -114,6 +125,10 @@ async function main() {
             const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/.exec(entry);
             const summaryMatch = /<summary[^>]*>([\s\S]*?)<\/summary>/.exec(entry);
             
+            // Category extraction (arxiv:primary_category or generic category)
+            const categoryMatch = /<arxiv:primary_category[^>]*term=["']([^"']+)["']/.exec(entry) || /<category[^>]*term=["']([^"']+)["']/.exec(entry);
+            const category = categoryMatch ? categoryMatch[1] : 'CS'; // Default to CS if missing
+
             // Authors
             const authorMatches = [];
             const authorRegex = /<author>[\s\S]*?<name>(.*?)<\/name>[\s\S]*?<\/author>/g;
@@ -147,11 +162,21 @@ async function main() {
                 id: idMatch ? idMatch[1] : null,
                 published: publishedMatch ? publishedMatch[1] : null,
                 title: titleMatch ? cleanText(titleMatch[1]) : 'No Title',
+                category: category,
                 authors: authorMatches,
                 summary: summaryMatch ? cleanText(summaryMatch[1]) : '',
                 pdf_link: pdfLink
             };
         });
+
+        // Date Filtering
+        if (DAYS_FILTER) {
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - DAYS_FILTER);
+            const initialCount = papers.length;
+            papers = papers.filter(p => new Date(p.published) >= cutoff);
+            if (!WATCH_MODE) console.error(`[ArXiv] Date Filter: Kept ${papers.length}/${initialCount} papers (Last ${DAYS_FILTER} days).`);
+        }
 
         // Watch Mode Logic
         if (WATCH_MODE) {
@@ -196,7 +221,7 @@ async function main() {
                 const md = papers.map(p => {
                     const auth = p.authors.slice(0, 3).join(', ') + (p.authors.length > 3 ? ' et al.' : '');
                     const date = p.published ? p.published.split('T')[0] : '';
-                    return `- **${p.title}**\n  *${auth}* (${date}) [PDF](${p.pdf_link || '#'})\n  > ${p.summary.slice(0, 300)}...`;
+                    return `- **${p.title}**\n  *${auth}* | \`${p.category}\` | ${date} | [PDF](${p.pdf_link || '#'})\n  > ${p.summary.slice(0, 300)}...`;
                 }).join('\n\n');
                 console.log(md);
             } else {

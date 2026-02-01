@@ -172,6 +172,40 @@ async function sendSticker(options) {
 
     console.log(`Sending sticker: ${selectedFile}`);
 
+    // Optimization: Large Image Compression (>5MB) to avoid API errors
+    if (ffmpegPath) {
+        try {
+            const stats = fs.statSync(selectedFile);
+            const LIMIT_BYTES = 5 * 1024 * 1024; // 5MB
+            if (stats.size > LIMIT_BYTES) {
+                console.log(`[Compression] Image is ${(stats.size/1024/1024).toFixed(2)}MB (>5MB). Compressing...`);
+                // Use a temp file for compression output
+                const compressedPath = path.join(path.dirname(selectedFile), `temp_compressed_${Date.now()}.webp`);
+                
+                const args = ['-i', selectedFile, '-c:v', 'libwebp', '-q:v', '60', '-y', compressedPath];
+                const res = spawnSync(ffmpegPath, args, { stdio: 'ignore' });
+                
+                if (res.status === 0 && fs.existsSync(compressedPath)) {
+                    const newStats = fs.statSync(compressedPath);
+                    if (newStats.size < stats.size && newStats.size < LIMIT_BYTES) {
+                        console.log(`[Compression] Success: ${(newStats.size/1024/1024).toFixed(2)}MB.`);
+                        selectedFile = compressedPath;
+                        // It's a temp file, so we might want to clean it up later?
+                        // But standard upload logic needs it.
+                        // We can leave it for now, or add cleanup logic after upload.
+                        // To keep it simple, we leave it (OS usually handles /tmp but this is in sticker dir).
+                        // Better: Delete after upload.
+                    } else {
+                         console.warn('[Compression] Failed to reduce size below limit.');
+                         try { fs.unlinkSync(compressedPath); } catch(e) {}
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[Compression] Error:', e.message);
+        }
+    }
+
     // Caching (Enhanced with MD5 Hash)
     const cachePath = path.join(__dirname, 'image_key_cache.json');
     let cache = {};

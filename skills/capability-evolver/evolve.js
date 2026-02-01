@@ -130,6 +130,17 @@ Focus on reliability, bug fixing, and documentation. Consolidate gains.
 }
 
 const STATE_FILE = path.join(MEMORY_DIR, 'evolution_state.json');
+const MEMORY_FILE = path.join(MEMORY_DIR, 'MEMORY.md');
+
+function readMemorySnippet() {
+    try {
+        if (!fs.existsSync(MEMORY_FILE)) return '[MEMORY.md MISSING]';
+        const content = fs.readFileSync(MEMORY_FILE, 'utf8');
+        return content.length > 2000 ? content.slice(0, 2000) + '... (truncated)' : content;
+    } catch (e) {
+        return '[ERROR READING MEMORY.md]';
+    }
+}
 
 function getNextCycleId() {
     let state = { cycleCount: 0, lastRun: 0 };
@@ -154,6 +165,7 @@ async function run() {
     
     let recentMasterLog = readRealSessionLog();
     let todayLog = readRecentLog(TODAY_LOG);
+    let memorySnippet = readMemorySnippet();
     
     const cycleNum = getNextCycleId();
     const cycleId = `Cycle #${cycleNum}`;
@@ -235,6 +247,11 @@ Your goal is to reach "Code Singularity" — where your codebase is so optimized
 **CONTEXT [Runtime State]**:
 - **Skills Available**:
 ${fileList}
+
+**CONTEXT [Global Memory (MEMORY.md)]**:
+\`\`\`
+${memorySnippet}
+\`\`\`
 
 **CONTEXT [Recent Memory Snippet]**:
 \`\`\`

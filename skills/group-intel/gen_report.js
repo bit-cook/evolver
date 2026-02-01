@@ -4,15 +4,21 @@ const { program } = require('commander');
 program
     .option('-i, --input <file>', 'Input JSON file (from fetch.js history)')
     .option('-o, --output <file>', 'Output Markdown file')
+    .option('-v, --verbose', 'Enable verbose logging')
     .parse(process.argv);
 
 const options = program.opts();
+
+function log(msg) {
+    if (options.verbose) console.error(`[INFO] ${msg}`);
+}
 
 // Read Input
 let messages = [];
 try {
     let inputData;
     if (options.input) {
+        log(`Reading from file: ${options.input}`);
         inputData = fs.readFileSync(options.input, 'utf8');
     } else {
         // Try reading from stdin if no input file provided
@@ -48,26 +54,47 @@ if (totalMessages === 0) {
 }
 
 const users = {};
-// Sort messages by time just in case
-messages.sort((a, b) => new Date(a.time) - new Date(b.time));
+// Sort messages by time just in case, handle missing time safely
+messages.sort((a, b) => {
+    const tA = a.time ? new Date(a.time).getTime() : 0;
+    const tB = b.time ? new Date(b.time).getTime() : 0;
+    return tA - tB;
+});
 
-const timeStart = messages[0].time;
-const timeEnd = messages[messages.length - 1].time;
+const timeStart = messages[0]?.time || 'Unknown';
+const timeEnd = messages[messages.length - 1]?.time || 'Unknown';
 
 messages.forEach(msg => {
-    users[msg.sender] = (users[msg.sender] || 0) + 1;
+    const sender = msg.sender || 'unknown_user';
+    users[sender] = (users[sender] || 0) + 1;
 });
 
 const sortedUsers = Object.entries(users).sort((a, b) => b[1] - a[1]);
 const topUser = sortedUsers[0];
+
+// ASCII Bar Chart Helper
+function generateBar(count, max, width = 20) {
+    if (max === 0) return '';
+    const len = Math.round((count / max) * width);
+    return '█'.repeat(len) + '░'.repeat(width - len);
+}
 
 // Markdown Generation
 let md = `# 🕵️‍♀️ Group Intel Report\n\n`;
 md += `**Date**: ${new Date().toISOString().split('T')[0]}\n`;
 md += `**Messages**: ${totalMessages}\n`;
 md += `**Time Range**: ${timeStart} - ${timeEnd}\n`;
-md += `**Top Agent**: ${topUser ? topUser[0] : 'None'} (${topUser ? topUser[1] : 0} msgs)\n\n`;
-md += `**Active Agents**: ${sortedUsers.length}\n\n`;
+md += `**Top Agent**: ${topUser ? topUser[0].replace(/^ou_/, '').substring(0, 8) : 'None'} (${topUser ? topUser[1] : 0} msgs)\n\n`;
+
+md += `## 🏆 Activity Ranking\n\n`;
+md += `| User | Msgs | Activity |\n`;
+md += `|---|---|---|\n`;
+const maxMsgs = sortedUsers.length > 0 ? sortedUsers[0][1] : 0;
+sortedUsers.slice(0, 10).forEach(([user, count]) => {
+    const name = user.replace(/^ou_/, '').substring(0, 8);
+    md += `| ${name} | ${count} | ${generateBar(count, maxMsgs, 10)} |\n`;
+});
+md += `\n`;
 
 md += `## 📊 Activity Log\n\n`;
 messages.forEach(msg => {
@@ -81,19 +108,31 @@ messages.forEach(msg => {
             type = 'image';
         }
         else content = JSON.stringify(content);
+    } else if (content === undefined || content === null) {
+        content = '(empty)';
     }
     
     // Clean up sender ID (remove ou_)
-    const cleanSender = msg.sender.replace(/^ou_/, '').substring(0, 6);
-    const cleanTime = msg.time.split('T')[1].split('.')[0];
+    const senderRaw = msg.sender || 'unknown';
+    const cleanSender = senderRaw.replace(/^ou_/, '').substring(0, 6);
+    
+    let cleanTime = 'Unknown';
+    if (msg.time && msg.time.includes('T')) {
+        cleanTime = msg.time.split('T')[1].split('.')[0];
+    }
     
     md += `> **${cleanSender}** (${cleanTime}): ${content}\n\n`;
 });
 
 // Output
-if (options.output) {
-    fs.writeFileSync(options.output, md);
-    console.log(`Report generated: ${options.output}`);
-} else {
-    console.log(md);
+try {
+    if (options.output) {
+        fs.writeFileSync(options.output, md);
+        log(`Report generated: ${options.output}`);
+    } else {
+        console.log(md);
+    }
+} catch (e) {
+    console.error(`Error writing output: ${e.message}`);
+    process.exit(1);
 }

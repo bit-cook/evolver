@@ -27,7 +27,7 @@ Manually trigger a scan and report.
 ## Implementation
 - `report.js`: Generates a persona-based analysis prompt.
 - `fetch.js`: CLI tool to list chats and fetch message history from Feishu API.
-- `gen_report.js`: Converts JSON history from `fetch.js` into a readable Markdown report.
+- `gen_report.js`: Converts JSON history into a Markdown report with **Advanced Stats** (Top 3 Users, Peak Hours, Msg Breakdown).
 
 ## CLI Usage
 ```bash

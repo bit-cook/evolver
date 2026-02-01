@@ -162,6 +162,13 @@ async function sendCard(options) {
     }
 
     if (contentText) {
+        // Safety: Truncate to avoid API limits (Feishu Card limit ~30k chars)
+        const MAX_CHARS = 25000;
+        if (contentText.length > MAX_CHARS) {
+            console.warn(`[Feishu-Card] Content too long (${contentText.length} chars). Truncating to ${MAX_CHARS}.`);
+            contentText = contentText.substring(0, MAX_CHARS) + '\n\n...(Output Truncated due to size limit)...';
+        }
+
         elements.push({
             tag: 'div',
             text: {

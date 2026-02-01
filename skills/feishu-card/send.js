@@ -366,8 +366,23 @@ function getAutoTarget() {
         const contextPath = path.resolve(__dirname, '../../memory/context.json');
         if (fs.existsSync(contextPath)) {
             const context = JSON.parse(fs.readFileSync(contextPath, 'utf8'));
-            if (context.last_active_user) return context.last_active_user;
-            if (context.last_active_chat) return context.last_active_chat;
+            
+            // Priority: Group Chat (oc_) > User (ou_)
+            // If we are in a group context, we should reply to the group.
+            if (context.last_active_chat && context.last_active_chat.startsWith('oc_')) {
+                console.log(`[Feishu-Card] Target Source: context.json (Group: ${context.last_active_chat})`);
+                return context.last_active_chat;
+            }
+            
+            if (context.last_active_user) {
+                console.log(`[Feishu-Card] Target Source: context.json (User: ${context.last_active_user})`);
+                return context.last_active_user;
+            }
+
+            if (context.last_active_chat) {
+                console.log(`[Feishu-Card] Target Source: context.json (Chat: ${context.last_active_chat})`);
+                return context.last_active_chat;
+            }
         }
     } catch (e) {}
 

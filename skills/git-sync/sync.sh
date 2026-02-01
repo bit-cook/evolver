@@ -27,9 +27,10 @@ echo "Fetching origin..."
 git fetch origin main
 
 LOCAL=$(git rev-parse @)
-REMOTE=$(git rev-parse @{u})
+# Robustly get remote ref (ignore error if no upstream)
+REMOTE=$(git rev-parse @{u} 2>/dev/null || echo "")
 
-if [ "$LOCAL" = "$REMOTE" ]; then
+if [ -n "$REMOTE" ] && [ "$LOCAL" = "$REMOTE" ]; then
   echo "Local and Remote are in sync. Nothing to push."
   exit 0
 fi

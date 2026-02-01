@@ -24,26 +24,29 @@ function readRealSessionLog() {
 
         if (files.length === 0) return '[NO JSONL FILES]';
 
-        // Read the latest 2 files
         let content = '';
-        const MAX_BYTES = 8000;
+        const TARGET_BYTES = 8000;
         
-        for (let i = 0; i < Math.min(2, files.length); i++) {
-             let fileContent = fs.readFileSync(path.join(AGENT_SESSIONS_DIR, files[i].name), 'utf8');
-             // Add a marker between files
-             if (content) content = `\n--- PREVIOUS SESSION (${files[i].name}) ---\n` + content;
-             content = fileContent + content;
-             if (content.length > MAX_BYTES * 2) break; // Don't over-read
+        // Read the latest file first (efficient tail read)
+        const latestFile = path.join(AGENT_SESSIONS_DIR, files[0].name);
+        content = readRecentLog(latestFile, TARGET_BYTES);
+        
+        // If content is short (e.g. just started a session), peek at the previous one too
+        if (content.length < TARGET_BYTES && files.length > 1) {
+            const prevFile = path.join(AGENT_SESSIONS_DIR, files[1].name);
+            const needed = TARGET_BYTES - content.length;
+            const prevContent = readRecentLog(prevFile, needed);
+            
+            // Format to show continuity
+            content = `\n--- PREVIOUS SESSION (${files[1].name}) ---\n${prevContent}\n\n--- CURRENT SESSION (${files[0].name}) ---\n${content}`;
         }
         
-        // Take the last chunk
-        let snippet = content.slice(-MAX_BYTES);
         // Try to align to a line start to avoid broken JSON
-        const firstNewLine = snippet.indexOf('\n');
+        const firstNewLine = content.indexOf('\n');
         if (firstNewLine !== -1 && firstNewLine < 200) {
-            snippet = snippet.slice(firstNewLine + 1);
+            content = content.slice(firstNewLine + 1);
         }
-        return snippet;
+        return content;
     } catch (e) {
         return `[ERROR READING SESSION LOGS: ${e.message}]`;
     }

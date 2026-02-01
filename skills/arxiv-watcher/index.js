@@ -15,11 +15,27 @@ function fetchArxiv(query, max) {
     const url = `https://export.arxiv.org/api/query?search_query=${encodeURIComponent(query)}&start=0&max_results=${max}&sortBy=submittedDate&sortOrder=descending`;
     
     return new Promise((resolve, reject) => {
-        https.get(url, (res) => {
+        const req = https.get(url, {
+            headers: {
+                'User-Agent': 'OpenClaw/1.0 (EvolutionBot; +https://github.com/example/openclaw)' 
+            },
+            timeout: 30000 // 30s timeout
+        }, (res) => {
+            if (res.statusCode !== 200) {
+                reject(new Error(`ArXiv API returned status: ${res.statusCode}`));
+                res.resume(); // Consume response to free memory
+                return;
+            }
+
             let data = '';
             res.on('data', (chunk) => data += chunk);
             res.on('end', () => resolve(data));
-            res.on('error', (err) => reject(err));
+        });
+
+        req.on('error', (err) => reject(err));
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Request timed out after 30000ms'));
         });
     });
 }
@@ -69,16 +85,24 @@ async function main() {
                 authorMatches.push(authorMatch[1]);
             }
 
-            // PDF Link - robust match for type="application/pdf"
-            // Example: <link title="pdf" href="http://arxiv.org/pdf/2101.00001v1" rel="related" type="application/pdf"/>
+            // PDF Link - robust attribute parsing
             let pdfLink = null;
-            const pdfMatch = /<link[^>]*href="(.*?)"[^>]*type="application\/pdf"[^>]*>/.exec(entry);
-            if (pdfMatch) {
-                pdfLink = pdfMatch[1];
-            } else {
-                // Fallback: look for title="pdf"
-                 const titlePdfMatch = /<link[^>]*title="pdf"[^>]*href="(.*?)"[^>]*>/.exec(entry);
-                 if (titlePdfMatch) pdfLink = titlePdfMatch[1];
+            const linkRegex = /<link\s+([^>]*)\/?>/g;
+            let linkMatch;
+            while ((linkMatch = linkRegex.exec(entry)) !== null) {
+                const attrs = linkMatch[1];
+                const hrefMatch = /href="([^"]*)"/.exec(attrs);
+                const typeMatch = /type="([^"]*)"/.exec(attrs);
+                const titleMatch = /title="([^"]*)"/.exec(attrs);
+
+                const href = hrefMatch ? hrefMatch[1] : null;
+                const type = typeMatch ? typeMatch[1] : null;
+                const title = titleMatch ? titleMatch[1] : null;
+
+                if (href && (type === 'application/pdf' || title === 'pdf')) {
+                    pdfLink = href;
+                    break; // Found it
+                }
             }
 
             return {

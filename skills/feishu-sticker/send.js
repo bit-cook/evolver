@@ -131,7 +131,23 @@ async function sendSticker(options) {
     const cachePath = path.join(__dirname, 'image_key_cache.json');
     let cache = {};
     if (fs.existsSync(cachePath)) {
-        try { cache = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch (e) {}
+        try {
+            const rawCache = fs.readFileSync(cachePath, 'utf8');
+            if (rawCache.trim()) {
+                cache = JSON.parse(rawCache);
+            }
+        } catch (e) {
+            console.warn(`[Cache Warning] Corrupt cache file detected: ${e.message}`);
+            try {
+                // Backup corrupt file to prevent total data loss
+                const backupPath = cachePath + '.corrupt.' + Date.now();
+                fs.copyFileSync(cachePath, backupPath);
+                console.warn(`[Cache Warning] Backed up corrupt cache to ${backupPath}`);
+            } catch (backupErr) {
+                console.error('[Cache Error] Failed to backup corrupt cache:', backupErr.message);
+            }
+            // Proceed with empty cache (safe default), but original data is saved
+        }
     }
 
     // Calculate file hash for deduplication and content validation

@@ -7,7 +7,17 @@ const ARGS = process.argv.slice(2);
 const WATCH_MODE = ARGS.includes('--watch');
 const QUERY_ARG_INDEX = ARGS.findIndex(a => !a.startsWith('-'));
 let QUERY = (QUERY_ARG_INDEX !== -1 ? ARGS[QUERY_ARG_INDEX] : 'all:artificial intelligence');
-const MAX_RESULTS = 10; // Default limit
+
+// Parse --limit flag
+const limitFlagIndex = ARGS.indexOf('--limit');
+let MAX_RESULTS = 10;
+if (limitFlagIndex !== -1 && ARGS[limitFlagIndex + 1]) {
+    const parsedLimit = parseInt(ARGS[limitFlagIndex + 1], 10);
+    if (!isNaN(parsedLimit) && parsedLimit > 0) {
+        MAX_RESULTS = parsedLimit;
+    }
+}
+
 
 // State file for --watch mode
 const STATE_FILE = path.resolve(__dirname, '../../memory/arxiv_state.json');
@@ -62,17 +72,6 @@ async function fetchArxiv(query, max) {
     });
 }
 
-// Simple XML helper
-function extractTag(xml, tag) {
-    const regex = new RegExp(`<${tag}[^>]*>(.*?)</${tag}>`, 'gs');
-    const matches = [];
-    let match;
-    while ((match = regex.exec(xml)) !== null) {
-        matches.push(match[1].trim());
-    }
-    return matches;
-}
-
 // Helper to clean XML entities (basic)
 function cleanText(text) {
     return text
@@ -113,9 +112,10 @@ async function main() {
             let linkMatch;
             while ((linkMatch = linkRegex.exec(entry)) !== null) {
                 const attrs = linkMatch[1];
-                const hrefMatch = /href="([^"]*)"/.exec(attrs);
-                const typeMatch = /type="([^"]*)"/.exec(attrs);
-                const titleMatch = /title="([^"]*)"/.exec(attrs);
+                // Handle both single and double quotes
+                const hrefMatch = /href=["']([^"']*)["']/.exec(attrs);
+                const typeMatch = /type=["']([^"']*)["']/.exec(attrs);
+                const titleMatch = /title=["']([^"']*)["']/.exec(attrs);
 
                 const href = hrefMatch ? hrefMatch[1] : null;
                 const type = typeMatch ? typeMatch[1] : null;

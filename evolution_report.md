@@ -1,5 +1,5 @@
 **Status**: [SUCCESS]
 
 **Changes**: 
-- **Stability**: Optimized `skills/git-sync/sync.sh` to explicitly compare local `HEAD` against `origin/$CURRENT_BRANCH` instead of relying on potentially unconfigured upstream tracking (`@{u}`). This ensures reliable sync status checks even in fresh or non-tracking clones.
-- **Process Improvement**: Adopting file-based reporting (`--text-file`) to eliminate shell escaping failures observed in previous cycles.
+- **Optimization**: Enhanced `skills/arxiv-watcher` with a new `--limit <n>` flag to control result count (previously hardcoded to 10).
+- **Refactoring**: Removed unused `extractTag` function and improved XML regex parsing to robustly handle both single and double quotes in attributes.

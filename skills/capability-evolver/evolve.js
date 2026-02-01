@@ -138,6 +138,28 @@ function readRecentLog(filePath, size = 10000) {
     }
 }
 
+function checkSystemHealth() {
+    let report = [];
+    try {
+        // Disk usage
+        const df = execSync('df -h /', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const lines = df.trim().split('\n');
+        if (lines.length > 1) {
+            // parsing: Filesystem Size Used Avail Use% Mounted on
+            const parts = lines[1].split(/\s+/);
+            report.push(`Disk: ${parts[4]} (${parts[3]} free)`);
+        }
+    } catch (e) {}
+
+    try {
+        // Process count
+        const ps = execSync('ps aux | grep node | grep -v grep | wc -l', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        report.push(`Node Processes: ${ps.trim()}`);
+    } catch (e) {}
+    
+    return report.length ? report.join(' | ') : 'Health Check Unavailable';
+}
+
 function getMutationDirective(logContent) {
     // Adaptive Logic: Analyze recent logs for stability
     const errorCount = (logContent.match(/\[ERROR/g) || []).length + (logContent.match(/"isError":true/g) || []).length;
@@ -320,6 +342,7 @@ async function run() {
     } catch (e) { fileList = 'Error listing skills: ' + e.message; }
 
     const mutation = getMutationDirective(recentMasterLog);
+    const healthReport = checkSystemHealth();
     
     const scanTime = Date.now() - startTime;
     const memorySize = fs.existsSync(MEMORY_FILE) ? fs.statSync(MEMORY_FILE).size : 0;
@@ -331,6 +354,7 @@ async function run() {
 Your goal is to reach "Code Singularity" — where your codebase is so optimized it maintains itself.
 
 **CONTEXT [Runtime State]**:
+- **System Health**: ${healthReport}
 - **Scan Duration**: ${scanTime}ms
 - **Memory Size**: ${memorySize} bytes
 - **Skills Available**:

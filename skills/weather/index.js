@@ -1,8 +1,29 @@
 const process = require('process');
+const fs = require('fs');
+const path = require('path');
 
 const args = process.argv.slice(2);
 const jsonMode = args.includes('--json');
 const location = args.filter(a => !a.startsWith('--')).join(' ');
+
+const CACHE_FILE = path.resolve(__dirname, '../../memory/weather_geo_cache.json');
+
+function getGeoCache(loc) {
+    if (!fs.existsSync(CACHE_FILE)) return null;
+    try {
+        const cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+        return cache[loc.toLowerCase().trim()] || null;
+    } catch (e) { return null; }
+}
+
+function saveGeoCache(loc, data) {
+    let cache = {};
+    if (fs.existsSync(CACHE_FILE)) {
+        try { cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); } catch (e) {}
+    }
+    cache[loc.toLowerCase().trim()] = data;
+    try { fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2)); } catch (e) {}
+}
 
 if (!location) {
     if (jsonMode) {
@@ -37,16 +58,32 @@ async function getWttr(loc) {
 
 async function getOpenMeteo(loc) {
     try {
-        // 1. Geocode
-        const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(loc)}&count=1&language=en&format=json`;
-        const geoRes = await fetch(geoUrl, { signal: AbortSignal.timeout(5000) });
-        const geoData = await geoRes.json();
+        // 1. Geocode (Cache First)
+        let geo = getGeoCache(loc);
         
-        if (!geoData.results || geoData.results.length === 0) {
-            throw new Error("Location not found");
+        if (!geo) {
+            if (!jsonMode) console.error(`[Weather] Geocoding '${loc}' via API...`);
+            const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(loc)}&count=1&language=en&format=json`;
+            const geoRes = await fetch(geoUrl, { signal: AbortSignal.timeout(5000) });
+            const geoData = await geoRes.json();
+            
+            if (!geoData.results || geoData.results.length === 0) {
+                throw new Error("Location not found");
+            }
+            
+            const result = geoData.results[0];
+            geo = {
+                latitude: result.latitude,
+                longitude: result.longitude,
+                name: result.name,
+                country: result.country
+            };
+            saveGeoCache(loc, geo);
+        } else {
+            if (!jsonMode) console.error(`[Weather] Using cached coordinates for '${loc}'.`);
         }
         
-        const { latitude, longitude, name, country } = geoData.results[0];
+        const { latitude, longitude, name, country } = geo;
         
         // 2. Weather
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`;

@@ -170,44 +170,87 @@ async function main() {
       }
     }
 
-    // 4. Report to Admin
-    let summary = `📋 *Attendance Report (${dateStr})*\nType: ${dayType} ${!isWorkday ? '(No Absent Checks)' : ''}\nTotal Checked: ${report.total}\n`;
-    if (holidayCheckWarning) summary += `${holidayCheckWarning}\n`;
-    if (argv.dryRun) summary += `\n(DRY RUN: No messages sent)\n`;
-    summary += `\n`;
+    // 4. Report to Admin (Card Construction)
+    const cardElements = [];
+    
+    // Summary Element
+    const statusEmoji = (!report.late.length && !report.early.length && !report.absent.length) ? '✅' : '⚠️';
+    let summaryText = `**Type**: ${dayType} ${!isWorkday ? '(No Absent Checks)' : ''}\n**Total Checked**: ${report.total}`;
+    if (holidayCheckWarning) summaryText += `\n${holidayCheckWarning}`;
+    if (argv.dryRun) summaryText += `\n(DRY RUN: No messages sent)`;
+    
+    cardElements.push({
+        tag: 'div',
+        text: { tag: 'lark_md', content: summaryText }
+    });
+    
+    const cardColor = (report.late.length || report.early.length || report.absent.length) ? 'orange' : 'green';
 
-    if (report.late.length > 0) summary += `🔴 *Late*:\n${report.late.join(', ')}\n\n`;
-    if (report.early.length > 0) summary += `🟡 *Early Leave*:\n${report.early.join(', ')}\n\n`;
-    if (report.absent.length > 0) summary += `⚫ *Absent*:\n${report.absent.join(', ')}\n\n`;
-
-    if (report.late.length === 0 && report.early.length === 0 && report.absent.length === 0) {
-        summary += "✅ *All Good!* No anomalies detected today.\n";
+    if (report.late.length > 0) {
+        cardElements.push({ tag: 'hr' });
+        cardElements.push({
+            tag: 'div',
+            text: { tag: 'lark_md', content: `🔴 **Late**:\n${report.late.join(', ')}` }
+        });
+    }
+    if (report.early.length > 0) {
+        cardElements.push({ tag: 'hr' });
+        cardElements.push({
+            tag: 'div',
+            text: { tag: 'lark_md', content: `🟡 **Early Leave**:\n${report.early.join(', ')}` }
+        });
+    }
+    if (report.absent.length > 0) {
+        cardElements.push({ tag: 'hr' });
+        cardElements.push({
+            tag: 'div',
+            text: { tag: 'lark_md', content: `⚫ **Absent**:\n${report.absent.join(', ')}` }
+        });
     }
 
-    // Add detailed logs for debugging/detailed view
-    summary += "\n*Detailed Logs:*\n";
+    if (report.late.length === 0 && report.early.length === 0 && report.absent.length === 0) {
+        cardElements.push({ tag: 'hr' });
+        cardElements.push({
+            tag: 'div',
+            text: { tag: 'lark_md', content: "✅ **All Good!** No anomalies detected today." }
+        });
+    }
+
+    // Detailed Logs
+    cardElements.push({ tag: 'hr' });
     let details = "";
     for (const res of results) {
         const userId = res.user_id;
         const userName = userMap[userId] ? userMap[userId].name : userId;
         const records = res.records || [];
         if (records.length > 0) {
-            const r = records[0]; // Assuming one shift per day for simplicity
-            details += `- ${userName}: In ${r.check_in_record_id ? '✅' : '❌'} | Out ${r.check_out_record_id ? '✅' : '❌'} (${r.check_in_result}/${r.check_out_result})\n`;
+            const r = records[0]; 
+            details += `- ${userName}: In ${r.check_in_record_id ? '✅' : '❌'} | Out ${r.check_out_record_id ? '✅' : '❌'}\n`;
         } else {
-             details += `- ${userName}: No shift/records\n`;
+             details += `- ${userName}: No shift\n`;
         }
     }
+    // Truncate
+    const MAX_CHARS = 4000;
+    if (details.length > MAX_CHARS) details = details.substring(0, MAX_CHARS) + "\n... (truncated)";
     
-    // Truncate details if too long (max ~2000 chars for safety)
-    if (details.length > 2000) {
-        details = details.substring(0, 2000) + "\n... (truncated)";
-    }
-    summary += details;
+    cardElements.push({
+        tag: 'note',
+        elements: [{ tag: 'plain_text', content: `Detailed Logs:\n${details}` }]
+    });
 
-    console.log('Sending report to Admin...');
+    const card = {
+        header: {
+            title: { tag: 'plain_text', content: `📋 Attendance Report (${dateStr})` },
+            template: cardColor
+        },
+        elements: cardElements
+    };
+
+    console.log('Sending report to Admin (via Card)...');
     if (!argv.dryRun) {
-        await sendMessage(ADMIN_ID, summary);
+        // sendMessage in lib/api.js handles objects as interactive cards
+        await sendMessage(ADMIN_ID, card);
         console.log('Report sent.');
     } else {
         console.log('DRY RUN: Report NOT sent.');

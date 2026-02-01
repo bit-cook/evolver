@@ -125,8 +125,17 @@ async function main() {
         return tA - tB;
     });
 
-    const timeStart = messages[0]?.time ? new Date(messages[0].time).toLocaleString() : 'Unknown';
-    const timeEnd = messages[messages.length - 1]?.time ? new Date(messages[messages.length - 1].time).toLocaleString() : 'Unknown';
+    const timezoneOffset = 8 * 60 * 60 * 1000; // UTC+8 for CST
+
+    // Helper: Format Date to CST
+    function formatTime(isoString) {
+        if (!isoString) return 'Unknown';
+        const date = new Date(new Date(isoString).getTime() + timezoneOffset);
+        return date.toISOString().replace('T', ' ').substring(0, 19); // YYYY-MM-DD HH:mm:ss
+    }
+
+    const timeStart = formatTime(messages[0]?.time);
+    const timeEnd = formatTime(messages[messages.length - 1]?.time);
 
     messages.forEach(msg => {
         const sender = msg.sender || 'unknown_user';
@@ -136,10 +145,11 @@ async function main() {
         const type = msg.type || 'text';
         msgTypes[type] = (msgTypes[type] || 0) + 1;
 
-        // Hourly Analysis
+        // Hourly Analysis (CST)
         if (msg.time) {
             try {
-                const hour = new Date(msg.time).getHours();
+                const date = new Date(new Date(msg.time).getTime() + timezoneOffset);
+                const hour = date.getUTCHours(); // Use getUTCHours because we manually shifted the time
                 if (hour >= 0 && hour < 24) hourlyActivity[hour]++;
             } catch (e) {}
         }
@@ -158,7 +168,7 @@ async function main() {
     // --- Markdown Assembly ---
     let md = `# 🕵️‍♀️ Group Intel Report\n\n`;
     md += `> **Persona**: ${options.persona}\n\n`;
-    md += `**📅 Range**: ${timeStart} - ${timeEnd}\n`;
+    md += `**📅 Range**: ${timeStart} - ${timeEnd} (CST)\n`;
     md += `**💬 Total Msgs**: ${totalMessages}\n`;
     if (topUser) {
         md += `**🏆 MVP**: ${topUser[0].replace(/^ou_/, '').substring(0, 6)} (${topUser[1]} msgs)\n`;
@@ -205,7 +215,11 @@ async function main() {
         }
         
         const sender = (msg.sender || 'unknown').replace(/^ou_/, '').substring(0, 6);
-        const time = msg.time ? new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '??:??';
+        let time = '??:??';
+        if (msg.time) {
+            const date = new Date(new Date(msg.time).getTime() + (8 * 60 * 60 * 1000));
+            time = date.toISOString().substring(11, 16); // HH:mm
+        }
         
         if (sender === lastSender) {
              md += `> ↳ ${content}\n`;

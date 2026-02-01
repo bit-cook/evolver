@@ -5,14 +5,24 @@ homepage: https://wttr.in/:help
 metadata: {"clawdbot":{"emoji":"🌤️","requires":{"bins":["node"]}}}
 ---
 
-# Weather
+# Weather Skill
 
-Robust weather checking with automatic fallback (wttr.in -> Open-Meteo).
+Robust weather checking with automatic fallback (`wttr.in` -> `Open-Meteo`).
+
+## Features
+- **Multi-Provider**: Tries `wttr.in` first, falls back to `Open-Meteo`.
+- **Geocoding**: Auto-resolves city names to coordinates (with caching).
+- **Rich Data**: Returns Temp, Condition, Humidity, Wind.
+- **JSON Mode**: Output raw JSON for programmatic use.
 
 ## Usage
 
 ```bash
+# Human-readable output
 node skills/weather/index.js "New York"
+
+# JSON output
+node skills/weather/index.js "Tokyo" --json
 ```
 
 ## Legacy (Manual Curl)

@@ -13,8 +13,10 @@
   - **Style:** Prefers **Feishu Interactive Cards** (Rich Text) for ALL replies.
   - **Format:** `interactive` card, **NO Title** for chat; **Title Allowed** for System Reports. **NO Footnote**.
   - **Method:** **PREFERRED:** Use `feishu-card` skill (via `exec: node .../send.js`) for clear, rich-text replies.
+    - **Technical Rule:** Feishu Cards MUST use `tag: 'markdown'` component, NOT `div` + `lark_md` (deprecated/broken).
     - **Exception:** Use `message` (plain text) for short acknowledgments ("OK", "Received") to reduce latency.
     - **Targeting:** ALWAYS detect context. If in group (`oc_...`), use group ID. If private (`ou_...`), use user ID. NEVER hardcode Master's ID for skills.
+  - **Fallback:** `message` tool (Markdown).
   - **Fallback:** `message` tool (Markdown).
   - **Stickers:** Collect memes/stickers sent by Master into `media/stickers/`. Use them occasionally in replies (send as separate image message).
   - **WebP Protocol:**
@@ -33,6 +35,12 @@
 - **Mind Blow Protocol:**
   - **Trigger:** When anyone says "mind blow" (or similar), invoke the `mind-blow` skill.
   - **Action:** `exec: node .../blow.js --intensity medium --target <current_user_id>`
+- **Project Standards (ai-game-engine ONLY):**
+  - **Scope:** These rules apply **ONLY** when working inside `ai-game-engine/`. Do not apply to root workspace or other projects.
+  - **Docs System:** `docs-site` (VitePress). The local `docs/` folder in this project is removed/deprecated.
+  - **AI Reports:** MUST be saved to `ai-game-engine/docs-site/ai-reports/`.
+  - **Standards:** Strictly follow `ai-game-engine/docs-site/developer-guide/` (TSDoc, Report formats).
+  - **API Index:** Use `ai-game-engine/docs-site/api-reference/manifest.json` for lookups.
 
 
 ## Tools & Skills
@@ -52,6 +60,7 @@
   - **PDF**: Document manipulation.
 - **Feishu Integration**:
   - **Cards**: Rich message builder.
+  - **Post**: Rich text (code-block friendly) message builder.
   - **Docs**: Wiki/Doc fetching.
   - **Stickers**: Sticker sending & analysis.
   - **Attendance**: Employee monitoring.
@@ -82,3 +91,8 @@
     - *Grumpy:* Short, slightly tsundere.
 ## Lore & Anomalies\n- **Cyber Ghost (2026-02-01):**\n  - **Event:** Audio loop ("I died") + negative timer in AutoGame.\n  - **Witnesses:** Li Mingxuan, Wu Yue, Wang Chao.\n  - **Status:** Investigating.
 - **Feishu API Docs:** Use `https://feishu.apifox.cn` (Mirror) for reliable API reference.
+
+## Temporary Focus (2026-02-02 Week)
+- **Lao Wang Project Priority:**
+  - **Rule:** If anyone assigns "Lao Wang" (老王) related work this week, REMIND THEM that the "Lao Wang project text cleanup" is the most important task.
+  - **Context:** Requested by Li Guobang (2026-02-02).

@@ -477,19 +477,6 @@ ${reportingDirective}
         \`node skills/capability-evolver/safe_publish.js skills/<skill-name>\`
       - This script handles auth checks, version bumping, and publishing automatically.
     - **Step C (GitHub - Skill)**: Push the \`capability-evolver\` repo if modified.
-    // Step E (Recursive Trigger): Optional Self-Replication
-    if (process.argv.includes('--recursive')) {
-        console.log('🧬 Triggering next evolution cycle immediately...');
-        try {
-            execSync('node skills/pcec-feishu/index.js --recursive', { stdio: 'inherit' });
-        } catch (e) {
-            console.error('Recursive trigger failed:', e.message);
-        }
-    }
-
-    // Step F (Workspace): ALWAYS sync the entire system:
-    \`bash skills/git-sync/sync.sh "🧬 Evolution: Workspace Sync"\`
-
     // Step G (Infinite Loop):
     // Trigger the next cycle. If cron fails (timeout), fallback to direct execution.
     // Primary: \`cron.run({ jobId: 'mad_dog_evolver' })\`

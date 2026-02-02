@@ -54,6 +54,17 @@ try {
     // Write with newline at EOF
     fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
     console.log(`✅ Bumped version to ${pkg.version}`);
+
+    // Commit and Tag (New Harden Step)
+    try {
+        console.log('📦 Committing version bump...');
+        execSync(`git add "${pkgPath}"`, { stdio: 'ignore' });
+        execSync(`git commit -m "chore: bump version to ${pkg.version}"`, { stdio: 'ignore' });
+        execSync(`git tag v${pkg.version}`, { stdio: 'ignore' });
+        console.log(`✅ Committed and tagged v${pkg.version}`);
+    } catch (gitErr) {
+        console.warn(`⚠️ Git commit/tag failed (non-fatal for publish): ${gitErr.message}`);
+    }
 } catch (e) {
     console.error(`❌ Failed to bump version: ${e.message}`);
     process.exit(1);

@@ -1,10 +1,12 @@
 const axios = require('axios');
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { program } = require('commander');
 
 program
   .option('--prompt <prompt>', 'Music description')
+  .option('--prompt-file <path>', 'Path to lyrics file')
   .option('--tags <tags>', 'Style tags')
   .option('--title <title>', 'Song title')
   .option('--model <model>', 'Model version', 'chirp-v5')
@@ -16,6 +18,15 @@ const API_KEY = process.env.VECTOR_ENGINE_KEY; // "sk-6ZzBbEBeQ8Rge0pNxCObVF8RhO
 const BASE_URL = 'https://api.vectorengine.ai/suno';
 
 async function main() {
+  if (options.promptFile) {
+    try {
+      options.prompt = fs.readFileSync(options.promptFile, 'utf8');
+    } catch (e) {
+      console.error(`Error reading prompt file: ${e.message}`);
+      process.exit(1);
+    }
+  }
+
   if (!API_KEY) {
     console.error("Error: VECTOR_ENGINE_KEY not found in environment.");
     process.exit(1);

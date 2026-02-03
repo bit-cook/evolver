@@ -89,6 +89,10 @@ function eventsPath() {
   return path.join(getGepAssetsDir(), 'events.jsonl');
 }
 
+function candidatesPath() {
+  return path.join(getGepAssetsDir(), 'candidates.jsonl');
+}
+
 function loadGenes() {
   return readJsonIfExists(genesPath(), getDefaultGenes()).genes || [];
 }
@@ -139,6 +143,33 @@ function appendEventJsonl(eventObj) {
   fs.appendFileSync(eventsPath(), JSON.stringify(eventObj) + '\n', 'utf8');
 }
 
+function appendCandidateJsonl(candidateObj) {
+  const dir = getGepAssetsDir();
+  ensureDir(dir);
+  fs.appendFileSync(candidatesPath(), JSON.stringify(candidateObj) + '\n', 'utf8');
+}
+
+function readRecentCandidates(limit = 20) {
+  try {
+    const p = candidatesPath();
+    if (!fs.existsSync(p)) return [];
+    const raw = fs.readFileSync(p, 'utf8');
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    const recent = lines.slice(Math.max(0, lines.length - limit));
+    return recent
+      .map(l => {
+        try {
+          return JSON.parse(l);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function upsertGene(geneObj) {
   const current = readJsonIfExists(genesPath(), getDefaultGenes());
   const genes = Array.isArray(current.genes) ? current.genes : [];
@@ -161,10 +192,13 @@ module.exports = {
   readAllEvents,
   getLastEventId,
   appendEventJsonl,
+  appendCandidateJsonl,
+  readRecentCandidates,
   upsertGene,
   appendCapsule,
   genesPath,
   capsulesPath,
   eventsPath,
+  candidatesPath,
 };
 

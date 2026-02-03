@@ -4,9 +4,10 @@ const os = require('os');
 const { execSync } = require('child_process');
 const { getRepoRoot, getMemoryDir } = require('./gep/paths');
 const { extractSignals } = require('./gep/signals');
-const { loadGenes, loadCapsules, getLastEventId } = require('./gep/assetStore');
+const { loadGenes, loadCapsules, getLastEventId, appendCandidateJsonl, readRecentCandidates } = require('./gep/assetStore');
 const { selectGeneAndCapsule } = require('./gep/selector');
 const { buildGepPrompt } = require('./gep/prompt');
+const { extractCapabilityCandidates, renderCandidatesPreview } = require('./gep/candidates');
 
 const REPO_ROOT = getRepoRoot();
 
@@ -508,6 +509,20 @@ async function run() {
     memorySnippet,
     userSnippet,
   });
+
+  // Capability candidates (structured, short): persist and preview.
+  const newCandidates = extractCapabilityCandidates({
+    recentSessionTranscript: recentMasterLog,
+    signals,
+  });
+  for (const c of newCandidates) {
+    try {
+      appendCandidateJsonl(c);
+    } catch (e) {}
+  }
+  const recentCandidates = readRecentCandidates(20);
+  const capabilityCandidatesPreview = renderCandidatesPreview(recentCandidates.slice(-8), 1600);
+
   const { selectedGene, capsuleCandidates, selector } = selectGeneAndCapsule({
     genes,
     capsules,
@@ -569,6 +584,7 @@ ${mutation}
     capsuleCandidates,
     genesPreview,
     capsulesPreview,
+    capabilityCandidatesPreview,
   });
 
   console.log(prompt);

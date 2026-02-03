@@ -8,12 +8,13 @@ function buildGepPrompt({
   capsuleCandidates,
   genesPreview,
   capsulesPreview,
+  capabilityCandidatesPreview,
 }) {
   const parentValue = parentEventId ? `"${parentEventId}"` : 'null';
   const selectedGeneId = selectedGene && selectedGene.id ? selectedGene.id : null;
   const capsuleIds = (capsuleCandidates || []).map(c => c && c.id).filter(Boolean);
 
-  return `
+  const basePrompt = `
 GEP — GENOME EVOLUTION PROTOCOL (STANDARD EXECUTION) [${nowIso}]
 
 You are not a chat assistant.
@@ -228,9 +229,25 @@ ${genesPreview}
 Context [Capsule Preview]:
 ${capsulesPreview}
 
+Context [Capability Candidates] (Five questions shape; keep it short):
+${capabilityCandidatesPreview || '(none)'}
+
 Context [Execution]:
 ${context}
 `.trim();
+
+  const maxChars = Number.isFinite(Number(process.env.GEP_PROMPT_MAX_CHARS))
+    ? Number(process.env.GEP_PROMPT_MAX_CHARS)
+    : 30000;
+
+  if (basePrompt.length <= maxChars) return basePrompt;
+
+  // Budget strategy: keep the protocol and structured assets, shrink execution context first.
+  const headKeep = Math.min(basePrompt.length, Math.floor(maxChars * 0.75));
+  const tailKeep = Math.max(0, maxChars - headKeep - 120);
+  const head = basePrompt.slice(0, headKeep);
+  const tail = tailKeep > 0 ? basePrompt.slice(basePrompt.length - tailKeep) : '';
+  return `${head}\n\n...[PROMPT TRUNCATED FOR BUDGET]...\n\n${tail}`.slice(0, maxChars);
 }
 
 module.exports = { buildGepPrompt };

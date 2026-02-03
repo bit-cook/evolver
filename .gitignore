@@ -1,5 +1,11 @@
 node_modules/
 .env
 *.log
-.clawhub/
+*.tmp
 temp/
+memory/master_history.json
+fmw/config.json
+fmw/replicate_music/gen_music.js
+**/.DS_Store
+.clawhub/
+skills/*/.clawhub/

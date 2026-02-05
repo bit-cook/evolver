@@ -455,8 +455,22 @@ function main() {
 
       run(`git -C "${tmpRepoDir}" add -A`, { dryRun });
       const msg = releaseTag ? `Release ${releaseTag}` : `Publish build output`;
-      run(`git -C "${tmpRepoDir}" commit -m "${msg.replace(/"/g, '\\"')}"`, { dryRun });
-      run(`git -C "${tmpRepoDir}" push origin ${publicBranch}`, { dryRun });
+
+      // If build output is identical to current public branch, skip commit/push.
+      const pending = run(`git -C "${tmpRepoDir}" status --porcelain`, { dryRun });
+      if (!dryRun && !pending) {
+        process.stdout.write('Public repo already matches build output. Skipping commit/push.\n');
+      } else {
+        // Avoid relying on global git config (CI environments often lack user.name/user.email).
+        run(
+          `git -C "${tmpRepoDir}" -c user.name="evolver-publish" -c user.email="evolver-publish@local" commit -m "${msg.replace(
+            /"/g,
+            '\\"'
+          )}"`,
+          { dryRun }
+        );
+        run(`git -C "${tmpRepoDir}" push origin ${publicBranch}`, { dryRun });
+      }
 
       if (releaseTag) {
         const tagMsg = releaseTitle || `Release ${releaseTag}`;

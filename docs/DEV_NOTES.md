@@ -14,70 +14,70 @@ Copied from `skills/evolver` on 2026-02-03.
 
 ## Release Workflow (Private Repo as Release Tool)
 
-目标：
-- 这个 private 仓库是“源码与发布工具仓库”（包含发布脚本、内部笔记）。
-- public 仓库 `autogame-17/evolver` 接收的是 **build 输出（dist-public）**，不是 private 的源码树。
-- `docs/` 与 `memory/` 属于内部资料，**不得**进入 public 构建产物（`scripts/build_public.js` 会校验并阻止）。
+Goals:
+- This private repo is the **source + release-tool repo** (contains publishing scripts and internal notes).
+- The public repo `autogame-17/evolver` receives **build output (`dist-public`)**, not the private source tree.
+- `docs/` and `memory/` are internal-only and MUST NOT be included in public build output (`scripts/build_public.js` validates and blocks them).
 
-### 一次标准发布（private -> public + GitHub Release + ClawHub）
+### Standard Release (private -> public + GitHub Release + ClawHub)
 
-1) 在 private 仓库完成代码与协议变更
-- 更新 `package.json` 的版本号（SemVer）。
-- 更新 `README.md` 与 `README.zh-CN.md` 的更新日志（包含历史版本条目）。
-- 提交并 push（建议沿用仓库风格：`chore(release): prepare vX.Y.Z`）。
-- 打 annotated tag 并 push tag（例如 `v1.4.2`）。
+1) Finish changes in the private repo
+- Bump `package.json` version (SemVer).
+- Update changelogs in `README.md` and `README.zh-CN.md` (include historical versions).
+- Commit and push (recommended style: `chore(release): prepare vX.Y.Z`).
+- Create an annotated tag and push it (e.g. `v1.4.2`).
 
-2) 创建 GitHub Release（private 仓库）
-- 使用 GitHub CLI（Windows 示例路径）：
+2) Create GitHub Release (private repo)
+- Using GitHub CLI (Windows example path):
   - `& "C:\Program Files\GitHub CLI\gh.exe" release create vX.Y.Z --repo autogame-17/evolver-private-dev --generate-notes`
 
-3) 构建 public 产物（dist-public）
+3) Build public output (`dist-public`)
 - `npm run build`
-- 说明：build 过程会写出 `dist-public/package.json`（版本号应与本次发布一致）。
+- Note: the build writes `dist-public/package.json` (its version should match the release version).
 
-4) 推送 public 仓库（发布产物，而不是源码）
-- 使用发布脚本：`node scripts/publish_public.js`
-- 必要环境变量（PowerShell 示例）：
+4) Push to the public repo (publish build output, not source)
+- Use the publish script: `node scripts/publish_public.js`
+- Required env vars (PowerShell examples):
   - `$env:PUBLIC_REPO='autogame-17/evolver'`
   - `$env:PUBLIC_BRANCH='main'`
   - `$env:PUBLIC_USE_BUILD_OUTPUT='true'`
   - `$env:PUBLIC_RELEASE_ONLY='false'`
   - `$env:RELEASE_TAG='vX.Y.Z'`
-  - `$env:RELEASE_USE_GH='true'`（优先使用 gh 创建 release）
-  - `$env:CLAWHUB_REGISTRY='https://clawhub.ai'`（根据 token 可用性选择）
-- 注意：此脚本会在临时目录 clone public repo，将 `dist-public/` 覆盖到 public repo 后提交并 push。
+  - `$env:RELEASE_USE_GH='true'` (prefer creating releases via gh)
+  - `$env:CLAWHUB_REGISTRY='https://clawhub.ai'` (choose based on token compatibility)
+- Note: this script clones the public repo into a temp directory, replaces its contents with `dist-public/`, then commits and pushes.
 
-5) 创建 GitHub Release（public 仓库）
-- 由 `publish_public.js` 在 `RELEASE_SKIP != true` 且满足 gh/token 条件时自动创建。
-- 若只想修复 public 代码而不重复创建 release，设置：
+5) Create GitHub Release (public repo)
+- `publish_public.js` will create it when `RELEASE_SKIP != true` and gh/token prerequisites are met.
+- If you only want to fix public code without re-creating a release, set:
   - `$env:RELEASE_SKIP='true'`
 
-6) 同步发布到 ClawHub（可选，但默认开启）
-- `publish_public.js` 会在 release 成功后发布到两个 slug：
+6) Sync to ClawHub (optional; enabled by default)
+- After GitHub release succeeds, `publish_public.js` publishes to two slugs:
   - `evolver`
   - `capability-evolver`
-- 常用控制开关：
-  - 禁用：`$env:CLAWHUB_SKIP='true'`
-  - 强制开启：`$env:CLAWHUB_PUBLISH='true'`
+- Common toggles:
+  - Disable: `$env:CLAWHUB_SKIP='true'`
+  - Force enable: `$env:CLAWHUB_PUBLISH='true'`
 
-### 常见坑（务必注意）
+### Common Pitfalls (Read This)
 
-- 环境变量会在同一 shell 会话中“残留”
-  - 如果之前设置过 `$env:PUBLIC_RELEASE_ONLY='true'`，脚本会进入“仅创建 release 不推代码”的模式，导致 public 仓库代码没有更新。
-  - 建议每次运行前显式设置：`$env:PUBLIC_RELEASE_ONLY='false'`。
+- Env vars can "stick" in the same shell session
+  - If `$env:PUBLIC_RELEASE_ONLY='true'` was set previously, the script may only create a release and not push code, leaving the public repo unchanged.
+  - Always explicitly set: `$env:PUBLIC_RELEASE_ONLY='false'` before publishing.
 
-- `publish_public.js` 会检查本地 tag 是否已存在
-  - 如果 private 仓库已经有本地 tag（例如 `v1.4.2`），脚本会报错 `Tag v1.4.2 already exists.`（这是为了避免半发布）。
-  - 解决方案（任选其一）：
-    1) 临时删除本地 tag：`git tag -d vX.Y.Z`，发布结束后再 `git fetch --tags origin` 恢复；
-    2) 不传 `RELEASE_TAG`，仅推送 build 输出（会失去“Release vX.Y.Z”提交信息与 tag 相关动作）。
+- `publish_public.js` checks whether the local tag already exists
+  - If the private repo already has the local tag (e.g. `v1.4.2`), the script may fail with `Tag v1.4.2 already exists.` (to avoid partial publishes).
+  - Options:
+    1) Temporarily delete the local tag: `git tag -d vX.Y.Z`, then restore via `git fetch --tags origin` after publishing.
+    2) Do not pass `RELEASE_TAG` and only push build output (you lose tag-related commit/message conventions).
 
-- ClawHub registry 地址差异
-  - 某些 token 对 `https://www.clawhub.ai` 会 Unauthorized，但对 `https://clawhub.ai` 可用。
-  - 遇到鉴权失败优先尝试：`$env:CLAWHUB_REGISTRY='https://clawhub.ai'`。
+- ClawHub registry endpoint differences
+  - Some tokens are unauthorized against `https://www.clawhub.ai` but work with `https://clawhub.ai`.
+  - If you see auth failures, try: `$env:CLAWHUB_REGISTRY='https://clawhub.ai'`.
 
-- ClawHub 可见性（hide/unhide）
-  - 发布后如果 `inspect evolver` 显示 `Skill not found`，可能处于隐藏状态；
-  - 可执行：
+- ClawHub visibility (hide/unhide)
+  - If `inspect evolver` returns `Skill not found` after publishing, the skill may be hidden.
+  - Run:
     - `clawhub.cmd --registry https://clawhub.ai unhide evolver --yes`
     - `clawhub.cmd --registry https://clawhub.ai unhide capability-evolver --yes`

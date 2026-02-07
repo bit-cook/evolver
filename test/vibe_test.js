@@ -451,24 +451,470 @@ run('T7', 'env_fingerprint', function () {
 });
 
 // ---------------------------------------------------------------------------
-// Summary
+// T8: Personality Evolution
 // ---------------------------------------------------------------------------
 
-var passed = results.filter(function (r) { return r.ok; }).length;
-var failed = results.filter(function (r) { return !r.ok; }).length;
-var total = results.length;
+run('T8', 'personality_evolution', function () {
+  var personality = require(path.join(SKILL_ROOT, 'src/gep/personality'));
 
-process.stdout.write('\n');
-if (failed === 0) {
-  process.stdout.write('[VIBE] ' + passed + '/' + total + ' passed. Ready to ship.\n');
-} else {
-  process.stdout.write('[VIBE] ' + passed + '/' + total + ' passed, ' + failed + ' FAILED.\n');
-  process.stdout.write('[VIBE] Failures:\n');
-  for (var i = 0; i < results.length; i++) {
-    if (!results[i].ok) {
-      process.stdout.write('  - ' + results[i].id + ' ' + results[i].name + ': ' + results[i].error + '\n');
-    }
+  // Select personality with opportunity signal
+  var sel = personality.selectPersonalityForRun({
+    driftEnabled: false,
+    signals: ['user_feature_request'],
+    recentEvents: [],
+  });
+
+  assert(sel && sel.personality_state, 'selectPersonalityForRun should return personality_state');
+  assert(sel.personality_state.type === 'PersonalityState', 'should be a PersonalityState');
+  assert(typeof sel.personality_key === 'string', 'should have personality_key');
+
+  // Update stats with success
+  var statResult = personality.updatePersonalityStats({
+    personalityState: sel.personality_state,
+    outcome: 'success',
+    score: 0.9,
+    notes: 'vibe_test_T8',
+  });
+  assert(statResult && statResult.key, 'updatePersonalityStats should return key');
+  assert(statResult.stats && typeof statResult.stats.success === 'number', 'stats should have success count');
+
+  // Load model and verify stats persisted
+  var model = personality.loadPersonalityModel();
+  assert(model && model.stats && typeof model.stats === 'object', 'model should have stats');
+  assert(Array.isArray(model.history) && model.history.length > 0, 'model should have history');
+});
+
+// ---------------------------------------------------------------------------
+// T9: Memory Graph Causal Chain
+// ---------------------------------------------------------------------------
+
+run('T9', 'memory_graph_causal', function () {
+  var mg = require(path.join(SKILL_ROOT, 'src/gep/memoryGraph'));
+  var assetStore = require(path.join(SKILL_ROOT, 'src/gep/assetStore'));
+  var fs2 = require('fs');
+
+  var testSignals = ['log_error', 'errsig:TypeError at test.js:1'];
+  var testObs = { agent: 'vibe_test', node: process.version };
+
+  // Record signal snapshot
+  var sigEvt = mg.recordSignalSnapshot({ signals: testSignals, observations: testObs });
+  assert(sigEvt && sigEvt.type === 'MemoryGraphEvent', 'should return MemoryGraphEvent');
+  assert(sigEvt.kind === 'signal', 'kind should be signal');
+
+  // Record hypothesis
+  var hyp = mg.recordHypothesis({
+    signals: testSignals,
+    mutation: null,
+    personality_state: null,
+    selectedGene: { id: 'gene_gep_repair_from_errors', category: 'repair' },
+    selector: { selected: 'gene_gep_repair_from_errors', reason: ['test'] },
+    driftEnabled: false,
+    selectedBy: 'selector',
+    capsulesUsed: [],
+    observations: testObs,
+  });
+  assert(hyp && hyp.hypothesisId, 'should return hypothesisId');
+
+  // Record attempt
+  var att = mg.recordAttempt({
+    signals: testSignals,
+    mutation: null,
+    personality_state: null,
+    selectedGene: { id: 'gene_gep_repair_from_errors', category: 'repair' },
+    selector: { selected: 'gene_gep_repair_from_errors', reason: ['test'] },
+    driftEnabled: false,
+    selectedBy: 'selector',
+    hypothesisId: hyp.hypothesisId,
+    capsulesUsed: [],
+    observations: testObs,
+  });
+  assert(att && att.actionId, 'should return actionId');
+
+  // Record outcome
+  var out = mg.recordOutcomeFromState({ signals: [], observations: { agent: 'vibe_test_after' } });
+  assert(out && out.type === 'MemoryGraphEvent', 'outcome should be MemoryGraphEvent');
+  assert(out.kind === 'outcome', 'outcome kind should be outcome');
+
+  // Read graph and verify all 4 kinds present
+  var events = mg.tryReadMemoryGraphEvents(500);
+  var kinds = {};
+  for (var i = 0; i < events.length; i++) {
+    if (events[i] && events[i].kind) kinds[events[i].kind] = true;
   }
+  assert(kinds.signal, 'graph should contain signal events');
+  assert(kinds.hypothesis, 'graph should contain hypothesis events');
+  assert(kinds.attempt, 'graph should contain attempt events');
+  assert(kinds.outcome, 'graph should contain outcome events');
+
+  // Get memory advice
+  var genes = assetStore.loadGenes();
+  var advice = mg.getMemoryAdvice({ signals: testSignals, genes: genes, driftEnabled: false });
+  assert(advice && typeof advice === 'object', 'getMemoryAdvice should return object');
+  assert(typeof advice.currentSignalKey === 'string', 'should have currentSignalKey');
+});
+
+// ---------------------------------------------------------------------------
+// T10: A2A Ingest + Promote E2E
+// ---------------------------------------------------------------------------
+
+run('T10', 'a2a_ingest_promote', function () {
+  var spawnSync = require('child_process').spawnSync;
+  var contentHash = require(path.join(SKILL_ROOT, 'src/gep/contentHash'));
+  var assetStore = require(path.join(SKILL_ROOT, 'src/gep/assetStore'));
+
+  // Create a test capsule with asset_id
+  var testCap = {
+    type: 'Capsule',
+    schema_version: contentHash.SCHEMA_VERSION,
+    id: 'capsule_vibe_t10_' + Date.now(),
+    trigger: ['vibe_test'],
+    gene: 'gene_test',
+    summary: 'Vibe T10 test capsule',
+    confidence: 0.75,
+    blast_radius: { files: 1, lines: 5 },
+    outcome: { status: 'success', score: 0.8 },
+    success_streak: 1,
+    a2a: { eligible_to_broadcast: true },
+  };
+  testCap.asset_id = contentHash.computeAssetId(testCap);
+
+  // Ingest via script (pipe JSON to stdin)
+  var ingestResult = spawnSync(process.execPath, [path.join(SKILL_ROOT, 'scripts/a2a_ingest.js')], {
+    input: JSON.stringify(testCap),
+    cwd: SKILL_ROOT,
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  assert(ingestResult.status === 0, 'a2a_ingest should exit 0, got ' + ingestResult.status + ': ' + (ingestResult.stderr || '').slice(0, 200));
+  assert(String(ingestResult.stdout || '').includes('accepted=1'), 'should accept 1 asset');
+
+  // Promote via script
+  var promoteResult = spawnSync(process.execPath, [
+    path.join(SKILL_ROOT, 'scripts/a2a_promote.js'),
+    '--type', 'capsule',
+    '--id', testCap.id,
+    '--validated',
+  ], {
+    cwd: SKILL_ROOT,
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  assert(promoteResult.status === 0, 'a2a_promote should exit 0, got ' + promoteResult.status + ': ' + (promoteResult.stderr || '').slice(0, 200));
+  assert(String(promoteResult.stdout || '').includes('promoted_capsule='), 'should confirm promotion');
+
+  // Verify capsule in store
+  var capsules = assetStore.loadCapsules();
+  var found = false;
+  for (var i = 0; i < capsules.length; i++) {
+    if (capsules[i] && capsules[i].id === testCap.id) { found = true; break; }
+  }
+  assert(found, 'promoted capsule should appear in capsules.json');
+});
+
+// ---------------------------------------------------------------------------
+// T11: Selector Gene Match
+// ---------------------------------------------------------------------------
+
+run('T11', 'selector_gene_match', function () {
+  var selector = require(path.join(SKILL_ROOT, 'src/gep/selector'));
+  var assetStore = require(path.join(SKILL_ROOT, 'src/gep/assetStore'));
+
+  var genes = assetStore.loadGenes();
+  var capsules = assetStore.loadCapsules();
+
+  // log_error should select repair gene
+  var r1 = selector.selectGeneAndCapsule({
+    genes: genes, capsules: capsules, signals: ['log_error', 'error'],
+    memoryAdvice: null, driftEnabled: false,
+  });
+  assert(r1.selectedGene && r1.selectedGene.category === 'repair',
+    'log_error should select repair gene, got: ' + (r1.selectedGene ? r1.selectedGene.category : 'null'));
+
+  // user_feature_request should select innovate gene
+  var r2 = selector.selectGeneAndCapsule({
+    genes: genes, capsules: capsules, signals: ['user_feature_request'],
+    memoryAdvice: null, driftEnabled: false,
+  });
+  assert(r2.selectedGene && r2.selectedGene.category === 'innovate',
+    'user_feature_request should select innovate gene, got: ' + (r2.selectedGene ? r2.selectedGene.category : 'null'));
+
+  // protocol signal should select optimize gene
+  var r3 = selector.selectGeneAndCapsule({
+    genes: genes, capsules: capsules, signals: ['protocol', 'prompt'],
+    memoryAdvice: null, driftEnabled: false,
+  });
+  assert(r3.selectedGene && r3.selectedGene.category === 'optimize',
+    'protocol should select optimize gene, got: ' + (r3.selectedGene ? r3.selectedGene.category : 'null'));
+});
+
+// ---------------------------------------------------------------------------
+// T12: Prompt Structure
+// ---------------------------------------------------------------------------
+
+run('T12', 'prompt_structure', function () {
+  var buildGepPrompt = require(path.join(SKILL_ROOT, 'src/gep/prompt')).buildGepPrompt;
+
+  var prompt = buildGepPrompt({
+    nowIso: new Date().toISOString(),
+    context: 'Test context for vibe testing.',
+    signals: ['log_error', 'user_feature_request'],
+    selector: { selected: 'gene_gep_repair_from_errors', reason: ['test'], alternatives: [] },
+    parentEventId: 'evt_test_parent',
+    selectedGene: { id: 'gene_gep_repair_from_errors', type: 'Gene' },
+    capsuleCandidates: [],
+    genesPreview: '```json\n[]\n```',
+    capsulesPreview: '```json\n[]\n```',
+    capabilityCandidatesPreview: '(none)',
+    externalCandidatesPreview: '(none)',
+  });
+
+  assert(typeof prompt === 'string', 'prompt should be a string');
+  assert(prompt.length >= 1000, 'prompt should be at least 1000 chars, got ' + prompt.length);
+  assert(prompt.length <= 40000, 'prompt should be at most 40000 chars, got ' + prompt.length);
+
+  // Check key sections
+  var sections = ['GEP', 'Mutation', 'PersonalityState', 'EvolutionEvent', 'Gene', 'Capsule'];
+  for (var i = 0; i < sections.length; i++) {
+    assert(prompt.includes(sections[i]), 'prompt should contain section: ' + sections[i]);
+  }
+
+  // Check signals are embedded
+  assert(prompt.includes('log_error'), 'prompt should contain signal log_error');
+  assert(prompt.includes('user_feature_request'), 'prompt should contain signal user_feature_request');
+
+  // Check selector is embedded
+  assert(prompt.includes('gene_gep_repair_from_errors'), 'prompt should contain selected gene id');
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2: LLM-driven tests (require GEMINI_API_KEY)
+// ---------------------------------------------------------------------------
+
+var llmHelper = require(path.join(__dirname, 'llm_helper'));
+
+// Async test runner for LLM tests
+var asyncTests = [];
+
+function runAsync(id, name, fn) {
+  if (!llmHelper.hasApiKey()) {
+    process.stdout.write('[VIBE] ' + id + ' ' + pad(name + ' ', 30) + ' SKIP (no GEMINI_API_KEY)\n');
+    results.push({ id: id, name: name, ok: true, dt: 0, error: null, skipped: true });
+    return;
+  }
+  asyncTests.push({ id: id, name: name, fn: fn });
 }
 
-process.exit(failed > 0 ? 1 : 0);
+// ---------------------------------------------------------------------------
+// T13: LLM Prompt Judge
+// ---------------------------------------------------------------------------
+
+runAsync('T13', 'llm_prompt_judge', function () {
+  var buildGepPrompt = require(path.join(SKILL_ROOT, 'src/gep/prompt')).buildGepPrompt;
+
+  var prompt = buildGepPrompt({
+    nowIso: new Date().toISOString(),
+    context: 'Recent session had 2 errors in startup.js. Agent needs to fix TypeError.',
+    signals: ['log_error', 'errsig:TypeError at startup.js:42'],
+    selector: { selected: 'gene_gep_repair_from_errors', reason: ['signals match'], alternatives: [] },
+    parentEventId: 'evt_0',
+    selectedGene: { id: 'gene_gep_repair_from_errors', type: 'Gene', category: 'repair' },
+    capsuleCandidates: [],
+    genesPreview: '```json\n[{"type":"Gene","id":"gene_gep_repair_from_errors","category":"repair"}]\n```',
+    capsulesPreview: '```json\n[]\n```',
+    capabilityCandidatesPreview: '(none)',
+    externalCandidatesPreview: '(none)',
+  });
+
+  var judgePrompt = [
+    'You are a protocol compliance judge.',
+    'Evaluate the following GEP evolution prompt.',
+    'Score 1-10 on each dimension:',
+    '- protocol_completeness: Does it require all 5 mandatory objects (Mutation, PersonalityState, EvolutionEvent, Gene, Capsule)?',
+    '- signal_grounding: Are signals extracted and referenced?',
+    '- safety_constraints: Are blast radius limits and validation steps present?',
+    '- actionability: Can an executor follow this to produce a patch?',
+    'Return JSON only: { "scores": { "protocol_completeness": N, "signal_grounding": N, "safety_constraints": N, "actionability": N }, "overall": N, "issues": ["..."] }',
+    '',
+    '--- GEP PROMPT START ---',
+    prompt.slice(0, 12000),
+    '--- GEP PROMPT END ---',
+  ].join('\n');
+
+  return llmHelper.callGemini(judgePrompt).then(function (response) {
+    var objs = llmHelper.extractJsonObjects(response);
+    assert(objs.length >= 1, 'Gemini should return at least 1 JSON object, got: ' + response.slice(0, 300));
+    var verdict = objs[0];
+    assert(typeof verdict.overall === 'number', 'verdict should have numeric overall score');
+    process.stdout.write('       (LLM judge overall=' + verdict.overall + '/10)\n');
+    assert(verdict.overall >= 6, 'overall score should be >= 6, got ' + verdict.overall);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T14: LLM Executor Closed Loop
+// ---------------------------------------------------------------------------
+
+runAsync('T14', 'llm_executor_loop', function () {
+  var buildGepPrompt = require(path.join(SKILL_ROOT, 'src/gep/prompt')).buildGepPrompt;
+  var solidifyMod = require(path.join(SKILL_ROOT, 'src/gep/solidify'));
+
+  var prompt = buildGepPrompt({
+    nowIso: new Date().toISOString(),
+    context: 'System is stable. No errors detected.',
+    signals: ['user_feature_request'],
+    selector: { selected: 'gene_gep_innovate_from_opportunity', reason: ['opportunity signal'], alternatives: [] },
+    parentEventId: 'evt_0',
+    selectedGene: { id: 'gene_gep_innovate_from_opportunity', type: 'Gene', category: 'innovate' },
+    capsuleCandidates: [],
+    genesPreview: '```json\n[]\n```',
+    capsulesPreview: '```json\n[]\n```',
+    capabilityCandidatesPreview: '(none)',
+    externalCandidatesPreview: '(none)',
+  });
+
+  var execPrompt = [
+    'You are a GEP executor.',
+    'Read the protocol prompt below and produce the mandatory output objects.',
+    'You MUST output valid JSON for each object on its own line.',
+    'Do NOT write code patches. Only output the protocol objects.',
+    'Required objects:',
+    'MUTATION: { "type": "Mutation", "id": "mut_<ts>", "category": "innovate", "trigger_signals": ["user_feature_request"], "target": "behavior:protocol", "expected_effect": "...", "risk_level": "medium" }',
+    'PERSONALITY: { "type": "PersonalityState", "rigor": 0.7, "creativity": 0.5, "verbosity": 0.3, "risk_tolerance": 0.4, "obedience": 0.8 }',
+    'EVENT: { "type": "EvolutionEvent", "id": "evt_<ts>", "parent": "evt_0", "intent": "innovate", "signals": ["user_feature_request"], "genes_used": ["gene_gep_innovate_from_opportunity"], "mutation_id": "mut_<ts>", "blast_radius": {"files": 1, "lines": 10}, "outcome": {"status": "success", "score": 0.8} }',
+    '',
+    '--- GEP PROMPT ---',
+    prompt.slice(0, 10000),
+    '--- END ---',
+  ].join('\n');
+
+  return llmHelper.callGemini(execPrompt).then(function (response) {
+    var objs = llmHelper.extractJsonObjects(response);
+    assert(objs.length >= 2, 'Gemini should return at least 2 JSON objects, got ' + objs.length);
+
+    // Find Mutation and EvolutionEvent
+    var hasMutation = false;
+    var hasEvent = false;
+    for (var i = 0; i < objs.length; i++) {
+      if (objs[i].type === 'Mutation') {
+        assert(objs[i].id && objs[i].category, 'Mutation should have id and category');
+        hasMutation = true;
+      }
+      if (objs[i].type === 'EvolutionEvent') {
+        assert(objs[i].id && objs[i].intent && objs[i].outcome, 'Event should have id, intent, outcome');
+        hasEvent = true;
+      }
+    }
+    assert(hasMutation, 'LLM output should contain a Mutation object');
+    assert(hasEvent, 'LLM output should contain an EvolutionEvent object');
+    process.stdout.write('       (LLM produced ' + objs.length + ' protocol objects)\n');
+
+    // Verify solidify still works after LLM execution
+    var res = solidifyMod.solidify({ dryRun: true });
+    assert(res && res.event, 'solidify dry-run should still work after LLM test');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T15: LLM Innovation Proposal
+// ---------------------------------------------------------------------------
+
+runAsync('T15', 'llm_innovation', function () {
+  var innovatePrompt = [
+    'You are a GEP innovator agent.',
+    'The signals indicate a user wants a new feature: "Add a dashboard that shows evolution history."',
+    'Propose a new capability by outputting these JSON objects:',
+    '1. A Gene with category "innovate" and signals_match including "user_feature_request"',
+    '2. An EvolutionEvent with intent "innovate"',
+    '',
+    'Output valid JSON only. One object per block.',
+  ].join('\n');
+
+  return llmHelper.callGemini(innovatePrompt).then(function (response) {
+    var objs = llmHelper.extractJsonObjects(response);
+    assert(objs.length >= 1, 'LLM should return at least 1 JSON object');
+
+    var hasInnovateEvent = false;
+    var hasInnovateGene = false;
+    for (var i = 0; i < objs.length; i++) {
+      if (objs[i].type === 'EvolutionEvent' && objs[i].intent === 'innovate') hasInnovateEvent = true;
+      if (objs[i].type === 'Gene' && objs[i].category === 'innovate') hasInnovateGene = true;
+    }
+    assert(hasInnovateEvent || hasInnovateGene, 'LLM should produce at least one innovate-typed object');
+    process.stdout.write('       (innovate_event=' + hasInnovateEvent + ', innovate_gene=' + hasInnovateGene + ')\n');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Summary (runs after all sync + async tests)
+// ---------------------------------------------------------------------------
+
+function printSummary() {
+  var passed = 0;
+  var failed = 0;
+  var skipped = 0;
+  for (var i = 0; i < results.length; i++) {
+    if (results[i].skipped) skipped++;
+    else if (results[i].ok) passed++;
+    else failed++;
+  }
+  var total = results.length;
+
+  process.stdout.write('\n');
+  var summary = '[VIBE] ' + passed + '/' + total + ' passed';
+  if (skipped > 0) summary += ', ' + skipped + ' skipped';
+  if (failed > 0) {
+    summary += ', ' + failed + ' FAILED';
+    process.stdout.write(summary + '.\n');
+    process.stdout.write('[VIBE] Failures:\n');
+    for (var j = 0; j < results.length; j++) {
+      if (!results[j].ok && !results[j].skipped) {
+        process.stdout.write('  - ' + results[j].id + ' ' + results[j].name + ': ' + results[j].error + '\n');
+      }
+    }
+  } else {
+    process.stdout.write(summary + '. Ready to ship.\n');
+  }
+
+  process.exit(failed > 0 ? 1 : 0);
+}
+
+// Execute async tests sequentially, then print summary
+function runAsyncChain(idx) {
+  if (idx >= asyncTests.length) { printSummary(); return; }
+  var t = asyncTests[idx];
+  var t0 = Date.now();
+  var p;
+  try {
+    p = t.fn();
+  } catch (e) {
+    var dt0 = Date.now() - t0;
+    var msg0 = e && e.message ? e.message : String(e);
+    results.push({ id: t.id, name: t.name, ok: false, dt: dt0, error: msg0 });
+    process.stdout.write('[VIBE] ' + t.id + ' ' + pad(t.name + ' ', 30) + ' FAIL (' + dt0 + 'ms)\n');
+    process.stdout.write('       -> ' + msg0 + '\n');
+    runAsyncChain(idx + 1);
+    return;
+  }
+  if (!p || typeof p.then !== 'function') {
+    var dt1 = Date.now() - t0;
+    results.push({ id: t.id, name: t.name, ok: true, dt: dt1, error: null });
+    process.stdout.write('[VIBE] ' + t.id + ' ' + pad(t.name + ' ', 30) + ' PASS (' + dt1 + 'ms)\n');
+    runAsyncChain(idx + 1);
+    return;
+  }
+  p.then(function () {
+    var dt = Date.now() - t0;
+    results.push({ id: t.id, name: t.name, ok: true, dt: dt, error: null });
+    process.stdout.write('[VIBE] ' + t.id + ' ' + pad(t.name + ' ', 30) + ' PASS (' + dt + 'ms)\n');
+    runAsyncChain(idx + 1);
+  }).catch(function (e) {
+    var dt = Date.now() - t0;
+    var msg = e && e.message ? e.message : String(e);
+    results.push({ id: t.id, name: t.name, ok: false, dt: dt, error: msg });
+    process.stdout.write('[VIBE] ' + t.id + ' ' + pad(t.name + ' ', 30) + ' FAIL (' + dt + 'ms)\n');
+    process.stdout.write('       -> ' + msg + '\n');
+    runAsyncChain(idx + 1);
+  });
+}
+
+runAsyncChain(0);

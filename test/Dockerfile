@@ -13,6 +13,7 @@ COPY dist-public/ /workspace/skills/evolver/
 # Copy test infrastructure
 COPY test/fixtures/ /workspace/skills/evolver/test/fixtures/
 COPY test/vibe_test.js /workspace/skills/evolver/test/vibe_test.js
+COPY test/llm_helper.js /workspace/skills/evolver/test/llm_helper.js
 
 # Place mock session log where evolve.js expects it
 COPY test/fixtures/session_mock.jsonl /home/node/.openclaw/agents/main/sessions/mock_session.jsonl

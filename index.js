@@ -25,9 +25,9 @@ async function main() {
             // We add a delay to prevent rapid crash loops.
             console.log(`
             // [RECOVERY MODE] Evolution Logic Crashed.
-            // Spawning next loop with delay to prevent rapid crash loops.
+            // Spawning next loop via safe recovery script.
             sessions_spawn({
-                task: "exec: sleep 10 && node skills/private-evolver/index.js --loop",
+                task: "exec: bash skills/private-evolver/recover.sh",
                 agentId: "main",
                 cleanup: "delete",
                 label: "mad_dog_recovery"

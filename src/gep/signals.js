@@ -89,6 +89,21 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
     }
   }
 
+  // --- Signal prioritization ---
+  // Remove cosmetic signals when actionable signals exist
+  var actionable = signals.filter(function (s) {
+    return s !== 'user_missing' && s !== 'memory_missing' && s !== 'session_logs_missing' && s !== 'windows_shell_incompatible';
+  });
+  // If we have actionable signals, drop the cosmetic ones
+  if (actionable.length > 0) {
+    signals = actionable;
+  }
+
+  // If no signals at all, add a default innovation signal
+  if (signals.length === 0) {
+    signals.push('stable_success_plateau');
+  }
+
   return Array.from(new Set(signals));
 }
 

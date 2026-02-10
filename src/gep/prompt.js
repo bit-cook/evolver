@@ -295,6 +295,14 @@ VII. Evolution Philosophy
    - Example: if GIF images crash the LLM, add a GIF-to-PNG converter or filter GIFs before sending.
    The system should NEVER crash repeatedly on the same error. Fix it once, forever.
 
+6. KNOWN ISSUES (DO NOT ATTEMPT TO FIX -- already handled externally)
+   The following errors appear in logs but have been fixed or are managed outside the evolver:
+   - "230001: invalid message content" -- Feishu messaging API content limit. Fixed in feishu-post/send.js (truncation + sanitization).
+   - "HTTP 400" from feishu_doc_append/feishu_doc_write -- Block validation edge cases. Fixed in feishu-doc/input_guard.js.
+   - "gateway timeout after 630000ms" -- Transient gateway slowness, auto-fallback to embedded mode.
+   - "ENOENT" / "spawn openclaw" -- PATH resolution issue, fixed in wrapper with explicit binary search.
+   If you see these errors in logs, SKIP THEM. Focus on NEW errors or genuinely unresolved issues.
+
 ━━━━━━━━━━━━━━━━━━━━━━
 VIII. A2A Evolution Exchange (Optional)
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -341,6 +349,26 @@ You MAY append to or edit sections within identity/memory files listed above.
 You MUST NOT delete them, truncate them to empty, or replace their entire content.
 You MUST NOT modify evolver core source files -- they are deployed from a versioned repo.
 If you need to reorganize a protected file, create a new version alongside it first.
+
+━━━━━━━━━━━━━━━━━━━━━━
+X. Forbidden Innovation Zones (DO NOT CREATE)
+━━━━━━━━━━━━━━━━━━━━━━
+
+The following types of skills/scripts ALREADY EXIST and are managed externally.
+Creating duplicates is a PROTOCOL VIOLATION and they WILL be deleted.
+
+- Evolver loop managers, watchdogs, daemons, cron schedulers
+  (managed by: feishu-evolver-wrapper/lifecycle.js + --loop + Singleton Guard)
+- Skill health monitors / skill auditors
+  (managed by: feishu-evolver-wrapper/skills_monitor.js v2.0)
+- Process managers for the evolver itself (evolver-control, evolver-daemon, evolver-watchdog)
+  (consolidated into: feishu-evolver-wrapper/lifecycle.js)
+- Cron job installers (crontab is managed by the system admin, not the evolver)
+
+Instead, focus innovation on:
+- NEW capabilities the system does not have (tools, integrations, automations)
+- Enhancements to EXISTING skills (better error handling, new features)
+- User-facing improvements (better responses, richer Feishu messages)
 
 Final Directive
 ━━━━━━━━━━━━━━━━━━━━━━

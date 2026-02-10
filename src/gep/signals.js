@@ -175,6 +175,23 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
     }
   }
 
+  // --- Tool Usage Analytics (auto-evolved) ---
+  // Detect high-frequency tool usage patterns that suggest automation opportunities
+  var toolUsage = {};
+  var toolMatches = corpus.match(/\[TOOL:\s*(\w+)\]/g) || [];
+  for (var ti = 0; ti < toolMatches.length; ti++) {
+    var toolName = toolMatches[ti].match(/\[TOOL:\s*(\w+)\]/)[1];
+    toolUsage[toolName] = (toolUsage[toolName] || 0) + 1;
+  }
+  Object.keys(toolUsage).forEach(function(tool) {
+    if (toolUsage[tool] >= 5) {
+      signals.push('high_tool_usage:' + tool);
+    }
+    if (tool === 'exec' && toolUsage[tool] >= 3) {
+      signals.push('repeated_tool_usage:exec');
+    }
+  });
+
   // --- Signal prioritization ---
   // Remove cosmetic signals when actionable signals exist
   var actionable = signals.filter(function (s) {

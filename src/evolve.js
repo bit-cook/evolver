@@ -541,6 +541,17 @@ function sleepMs(ms) {
   return new Promise(resolve => setTimeout(resolve, n));
 }
 
+// Check system load average via os.loadavg().
+// Returns { load1m, load5m, load15m }. Used for load-aware throttling.
+function getSystemLoad() {
+  try {
+    const loadavg = os.loadavg();
+    return { load1m: loadavg[0], load5m: loadavg[1], load15m: loadavg[2] };
+  } catch (e) {
+    return { load1m: 0, load5m: 0, load15m: 0 };
+  }
+}
+
 // Check how many agent sessions are actively being processed (modified in the last N minutes).
 // If the agent is busy with user conversations, evolver should back off.
 function getRecentActiveSessionCount(windowMs) {
@@ -567,6 +578,18 @@ async function run() {
   const activeUserSessions = getRecentActiveSessionCount(10 * 60 * 1000);
   if (activeUserSessions > QUEUE_MAX) {
     console.log(`[Evolver] Agent has ${activeUserSessions} active user sessions (max ${QUEUE_MAX}). Backing off ${QUEUE_BACKOFF_MS}ms to avoid starving user conversations.`);
+    await sleepMs(QUEUE_BACKOFF_MS);
+    return;
+  }
+
+  // SAFEGUARD: System load awareness.
+  // When system load is too high (e.g. too many concurrent processes, heavy I/O),
+  // back off to prevent the evolver from contributing to load spikes.
+  // Echo-MingXuan's Cycle #55 saw load spike from 0.02-0.50 to 1.30 before crash.
+  const LOAD_MAX = parseFloat(process.env.EVOLVE_LOAD_MAX || '2.0');
+  const sysLoad = getSystemLoad();
+  if (sysLoad.load1m > LOAD_MAX) {
+    console.log(`[Evolver] System load ${sysLoad.load1m.toFixed(2)} exceeds max ${LOAD_MAX}. Backing off ${QUEUE_BACKOFF_MS}ms.`);
     await sleepMs(QUEUE_BACKOFF_MS);
     return;
   }

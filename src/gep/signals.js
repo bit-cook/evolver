@@ -81,6 +81,20 @@ function analyzeRecentHistory(recentEvents) {
     }
   }
 
+  // Count consecutive empty cycles at the tail (not just total in last 8).
+  // This detects saturation: the evolver has exhausted innovation space and keeps producing
+  // zero-change cycles. Used to trigger graceful degradation to steady-state mode.
+  var consecutiveEmptyCycles = 0;
+  for (var se = recent.length - 1; se >= 0; se--) {
+    var seBr = recent[se].blast_radius;
+    var seEm = recent[se].meta && recent[se].meta.empty_cycle;
+    if (seEm || (seBr && seBr.files === 0 && seBr.lines === 0)) {
+      consecutiveEmptyCycles++;
+    } else {
+      break;
+    }
+  }
+
   // Count consecutive failures at the tail of recent events.
   // This tells the evolver "you have been failing N times in a row -- slow down."
   var consecutiveFailureCount = 0;
@@ -105,6 +119,7 @@ function analyzeRecentHistory(recentEvents) {
     recentIntents: recentIntents,
     consecutiveRepairCount: consecutiveRepairCount,
     emptyCycleCount: emptyCycleCount,
+    consecutiveEmptyCycles: consecutiveEmptyCycles,
     consecutiveFailureCount: consecutiveFailureCount,
     recentFailureCount: recentFailureCount,
     recentFailureRatio: tail.length > 0 ? recentFailureCount / tail.length : 0,
@@ -290,6 +305,19 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
     });
     if (!signals.includes('empty_cycle_loop_detected')) signals.push('empty_cycle_loop_detected');
     if (!signals.includes('stable_success_plateau')) signals.push('stable_success_plateau');
+  }
+
+  // --- Saturation detection (graceful degradation) ---
+  // When consecutive empty cycles pile up at the tail, the evolver has exhausted its
+  // innovation space. Instead of spinning idle forever, signal that the system should
+  // switch to steady-state maintenance mode with reduced evolution frequency.
+  // This directly addresses the Echo-MingXuan failure: Cycle #55 hit "no committable
+  // code changes" and load spiked to 1.30 because there was no degradation strategy.
+  if (history.consecutiveEmptyCycles >= 5) {
+    if (!signals.includes('force_steady_state')) signals.push('force_steady_state');
+    if (!signals.includes('evolution_saturation')) signals.push('evolution_saturation');
+  } else if (history.consecutiveEmptyCycles >= 3) {
+    if (!signals.includes('evolution_saturation')) signals.push('evolution_saturation');
   }
 
   // --- Failure streak awareness ---

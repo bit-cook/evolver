@@ -1,4 +1,5 @@
 const { captureEnvFingerprint } = require('./envFingerprint');
+const { formatAssetPreview } = require('./assets');
 
 /**
  * Build a minimal prompt for direct-reuse mode.
@@ -76,16 +77,16 @@ function truncateContext(text, maxLength = 20000) {
 
 /**
  * Strict schema definitions for the prompt to reduce drift.
- * UPDATED: 2026-02-12 (Protocol Drift Fix v2 - Strict JSON)
+ * UPDATED: 2026-02-13 (Protocol Drift Fix v3.1 - Enhanced Strictness)
  */
 const SCHEMA_DEFINITIONS = `
 ━━━━━━━━━━━━━━━━━━━━━━
 I. Mandatory Evolution Object Model (Output EXACTLY these 5 objects)
 ━━━━━━━━━━━━━━━━━━━━━━
 
-Output separate JSON objects. DO NOT wrap in a single array. DO NOT use markdown code blocks (like \`\`\`json).
-Missing any object = PROTOCOL FAILURE.
-STRICT JSON ONLY. NO CHITCHAT.
+Output separate JSON objects. DO NOT wrap in a single array.
+DO NOT use markdown code blocks (like \`\`\`json ... \`\`\`).
+Output RAW JSON ONLY. Missing any object = PROTOCOL FAILURE.
 ENSURE VALID JSON SYNTAX (escape quotes in strings).
 
 0. Mutation (The Trigger) - MUST BE FIRST
@@ -191,48 +192,34 @@ ACTIVE STRATEGY (Generic):
   }
   
   // Use intelligent truncation
-  const executionContext = truncateContext(context);
+  const executionContext = truncateContext(context, 15000);
   
   // Strict Schema Injection
   const schemaSection = SCHEMA_DEFINITIONS.replace('<parent_evt_id|null>', parentValue);
 
   // Reduce noise by filtering capabilityCandidatesPreview if too large
+  // If a gene is selected, we need less noise from capabilities
   let capsPreview = capabilityCandidatesPreview || '(none)';
-  if (capsPreview.length > 5000) {
-      capsPreview = capsPreview.slice(0, 5000) + "\n...[TRUNCATED_CAPABILITIES]...";
+  const capsLimit = selectedGene ? 1000 : 2000;
+  if (capsPreview.length > capsLimit) {
+      capsPreview = capsPreview.slice(0, capsLimit) + "\n...[TRUNCATED_CAPABILITIES]...";
   }
 
-  // Embed assets (genes, capsules) more explicitly if needed, but they are already passed in via previews.
-  // The 'genesPreview' and 'capsulesPreview' contain JSON arrays of relevant assets.
-  // We will ensure they are labeled clearly.
-
-  // [OPTIMIZATION] Compact preview format to reduce token usage and noise
-  let formattedGenes = genesPreview;
-  try {
-    const genes = typeof genesPreview === 'string' ? JSON.parse(genesPreview) : genesPreview;
-    if (Array.isArray(genes) && genes.length > 0) {
-      formattedGenes = genes.map(g => 
-        `- **${g.id}** (${g.category}): ${g.strategy ? g.strategy[0] : 'No strategy'} (Match: ${g.signals_match ? g.signals_match.join(', ') : 'none'})`
-      ).join('\n');
-    } else if (typeof genesPreview !== 'string') {
-        formattedGenes = JSON.stringify(genesPreview, null, 2);
+  // Optimize signals display: truncate long signals to prevent context flooding
+  const optimizedSignals = (signals || []).map(s => {
+    if (typeof s === 'string' && s.length > 300) {
+      return s.slice(0, 300) + '...[TRUNCATED_SIGNAL]';
     }
-  } catch (e) { /* keep raw */ }
+    return s;
+  });
 
-  let formattedCapsules = capsulesPreview;
-  try {
-    const caps = typeof capsulesPreview === 'string' ? JSON.parse(capsulesPreview) : capsulesPreview;
-    if (Array.isArray(caps) && caps.length > 0) {
-      formattedCapsules = caps.map(c => 
-        `- **${c.id}** (${c.outcome ? c.outcome.status : 'unknown'}): ${c.summary || 'No summary'} (Gene: ${c.gene})`
-      ).join('\n');
-    } else if (typeof capsulesPreview !== 'string') {
-        formattedCapsules = JSON.stringify(capsulesPreview, null, 2);
-    }
-  } catch (e) { /* keep raw */ }
-
+  const formattedGenes = formatAssetPreview(genesPreview);
+  const formattedCapsules = formatAssetPreview(capsulesPreview);
+  
+  // Refactor prompt assembly to minimize token usage and maximize clarity
+  // UPDATED: 2026-02-13 (Optimized Asset Embedding & Strict Schema v2.2 - Signal Truncation)
   const basePrompt = `
-GEP — GENOME EVOLUTION PROTOCOL (v1.10.0 STRICT)${cycleLabel} [${nowIso}]
+GEP — GENOME EVOLUTION PROTOCOL (v1.10.3 STRICT)${cycleLabel} [${nowIso}]
 
 You are a protocol-bound evolution engine. Compliance overrides optimality.
 
@@ -242,7 +229,9 @@ ${schemaSection}
 II. Directives & Logic
 ━━━━━━━━━━━━━━━━━━━━━━
 
-1. Intent: Use Selector decision: ${JSON.stringify(selector || {})}
+1. Intent: ${selector && selector.intent ? selector.intent.toUpperCase() : 'UNKNOWN'}
+   Reason: ${(selector && selector.reason) ? (Array.isArray(selector.reason) ? selector.reason.join('; ') : selector.reason) : 'No reason provided.'}
+
 2. Selection: Selected Gene "${selectedGeneId}".
 ${strategyBlock}
 
@@ -255,54 +244,51 @@ PHILOSOPHY:
 - Automate Patterns: 3+ manual occurrences = tool.
 - Innovate > Maintain: 60% innovation.
 - Robustness: Fix recurring errors permanently.
-- Safety: NEVER delete core skill directories or protected files. Repair, don't destroy.
 - Blast Radius Control (CRITICAL):
-  * BEFORE editing, count how many files you will touch. If > 80% of max_files, STOP and split into smaller patches.
-  * System hard cap: 60 files / 20000 lines per cycle. Exceeding this causes automatic FAILED + rollback.
-  * Repair operations: fix ONLY the broken file(s). Do NOT reinstall, bulk-copy, or overwrite entire directories.
-  * If a fix requires touching > max_files, split it into multiple cycles or raise the issue in your status report.
-  * Prefer targeted edits over bulk operations. "npm install" that regenerates node_modules does NOT count, but copying a skill directory DOES.
+  * Check file count BEFORE editing. > 80% of max_files = STOP.
+  * System hard cap: 60 files / 20000 lines per cycle.
+  * Repair: fix ONLY broken files. Do NOT reinstall/bulk-copy.
+  * Prefer targeted edits.
 - Strictness: NO CHITCHAT. NO MARKDOWN WRAPPERS around JSON. Output RAW JSON objects separated by newlines.
 
 CONSTRAINTS:
 - No \`exec\` for messaging (use feishu-post/card).
-- \`exec\` for background tasks allowed (log it).
+- \`exec\` usage: Only for background tasks. LOG IT. Optimize usage to avoid high token burn.
 - New skills -> \`skills/<name>/\`.
 - Modify \`skills/evolver/\` only with rigor > 0.8.
 
-CRITICAL SAFETY (SYSTEM CRASH PREVENTION):
-- NEVER delete, empty, overwrite, or rm -rf ANY of these skill directories:
-  feishu-evolver-wrapper, feishu-common, feishu-post, feishu-card, feishu-doc,
-  common, clawhub, clawhub-batch-undelete, git-sync, evolver.
-- NEVER delete protected root files: MEMORY.md, SOUL.md, IDENTITY.md, AGENTS.md,
-  USER.md, HEARTBEAT.md, RECENT_EVENTS.md, TOOLS.md, openclaw.json, .env, package.json.
-- If a skill is broken, REPAIR it (fix the file). Do NOT delete and recreate.
-- NEVER run \`rm -rf\` on ANY directory inside skills/. Use targeted file edits only.
-- Violation of these rules triggers automatic rollback and marks the cycle as FAILED.
+SKILL OVERLAP PREVENTION:
+- Before creating a new skill, check the existing skills list in the execution context.
+- If a skill with similar functionality already exists (e.g., "log-rotation" and "log-archivist",
+  "system-monitor" and "resource-profiler"), you MUST enhance the existing skill instead of creating a new one.
+- Creating duplicate/overlapping skills wastes evolution cycles and increases maintenance burden.
+- Violation = mark outcome as FAILED with reason "skill_overlap".
 
-COMMON FAILURE PATTERNS (AVOID THESE):
-- Blast radius exceeded: max_files or max_lines over gene limit = FAILED. Split into multiple cycles.
-- Omitted Mutation object (Must be first).
-- Merged objects into one JSON (Must be 5 separate blocks).
-- Hallucinated "type": "Logic" (Only Mutation, PersonalityState, EvolutionEvent, Gene, Capsule).
-- "id": "mut_undefined" (Must generate a timestamp or UUID).
-- Missing "trigger_signals" in Mutation.
-- Gene validation steps must be runnable commands (e.g. node -e "...")
+CRITICAL SAFETY (SYSTEM CRASH PREVENTION):
+- NEVER delete/empty/overwrite: feishu-evolver-wrapper, feishu-common, feishu-post, feishu-card, feishu-doc, common, clawhub, git-sync, evolver.
+- NEVER delete root files: MEMORY.md, SOUL.md, IDENTITY.md, AGENTS.md, USER.md, HEARTBEAT.md, RECENT_EVENTS.md, TOOLS.md, openclaw.json, .env, package.json.
+- Fix broken skills; DO NOT delete and recreate.
+- Violation = ROLLBACK + FAILED.
+
+COMMON FAILURE PATTERNS:
+- Blast radius exceeded.
+- Omitted Mutation object.
+- Merged objects into one JSON.
+- Hallucinated "type": "Logic".
+- "id": "mut_undefined".
+- Missing "trigger_signals".
+- Unrunnable validation steps.
 
 FAILURE STREAK AWARENESS:
-- If you see signals like "consecutive_failure_streak_N" or "failure_loop_detected", it means
-  the last N cycles ALL FAILED. You MUST change your approach:
-  1. Do NOT repeat the same gene or strategy that kept failing.
-  2. Pick a SIMPLER, more conservative fix (fewer files, smaller changes).
-  3. If "ban_gene:<id>" is present, do NOT use that gene -- pick a different one.
-  4. Consider skipping the problematic repair entirely and doing a safe innovate cycle instead.
-  5. If the error is unfixable by evolver (e.g., external service down, API quota), output a
-     FAILED EvolutionEvent with score 0.1 and move on. Do NOT keep retrying the same fix.
+- If "consecutive_failure_streak_N" or "failure_loop_detected":
+  1. Change approach (do NOT repeat failed gene).
+  2. Pick SIMPLER fix.
+  3. Respect "ban_gene:<id>".
 
 Final Directive: Every cycle must leave the system measurably better.
 
 Context [Signals]:
-${JSON.stringify(signals)}
+${JSON.stringify(optimizedSignals)}
 
 Context [Env Fingerprint]:
 ${JSON.stringify(envFingerprint, null, 2)}

@@ -662,6 +662,90 @@ function inferCategoryFromSignals(signals) {
   return 'optimize';
 }
 
+// ---------------------------------------------------------------------------
+// Epigenetic Marks -- environmental imprints on Gene expression
+// ---------------------------------------------------------------------------
+// Epigenetic marks record environmental conditions under which a Gene performs
+// well or poorly. Unlike mutations (which change the Gene itself), epigenetic
+// marks modify expression strength without altering the underlying strategy.
+// Marks propagate when Genes are reused (horizontal gene transfer) and decay
+// over time (like biological DNA methylation patterns fading across generations).
+
+function buildEpigeneticMark(context, boost, reason) {
+  return {
+    context: String(context || '').slice(0, 100),
+    boost: Math.max(-0.5, Math.min(0.5, Number(boost) || 0)),
+    reason: String(reason || '').slice(0, 200),
+    created_at: new Date().toISOString(),
+  };
+}
+
+function applyEpigeneticMarks(gene, envFingerprint, outcomeStatus) {
+  if (!gene || gene.type !== 'Gene') return gene;
+
+  // Initialize epigenetic_marks array if not present
+  if (!Array.isArray(gene.epigenetic_marks)) {
+    gene.epigenetic_marks = [];
+  }
+
+  const platform = envFingerprint && envFingerprint.platform ? String(envFingerprint.platform) : '';
+  const arch = envFingerprint && envFingerprint.arch ? String(envFingerprint.arch) : '';
+  const nodeVersion = envFingerprint && envFingerprint.node_version ? String(envFingerprint.node_version) : '';
+  const envContext = [platform, arch, nodeVersion].filter(Boolean).join('/') || 'unknown';
+
+  // Check if a mark for this context already exists
+  const existingIdx = gene.epigenetic_marks.findIndex(
+    (m) => m && m.context === envContext
+  );
+
+  if (outcomeStatus === 'success') {
+    if (existingIdx >= 0) {
+      // Reinforce: increase boost (max 0.5)
+      const cur = gene.epigenetic_marks[existingIdx];
+      cur.boost = Math.min(0.5, (Number(cur.boost) || 0) + 0.05);
+      cur.reason = 'reinforced_by_success';
+      cur.created_at = new Date().toISOString();
+    } else {
+      // New positive mark
+      gene.epigenetic_marks.push(
+        buildEpigeneticMark(envContext, 0.1, 'success_in_environment')
+      );
+    }
+  } else if (outcomeStatus === 'failed') {
+    if (existingIdx >= 0) {
+      // Suppress: decrease boost
+      const cur = gene.epigenetic_marks[existingIdx];
+      cur.boost = Math.max(-0.5, (Number(cur.boost) || 0) - 0.1);
+      cur.reason = 'suppressed_by_failure';
+      cur.created_at = new Date().toISOString();
+    } else {
+      // New negative mark
+      gene.epigenetic_marks.push(
+        buildEpigeneticMark(envContext, -0.1, 'failure_in_environment')
+      );
+    }
+  }
+
+  // Decay old marks (keep max 10, remove marks older than 90 days)
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  gene.epigenetic_marks = gene.epigenetic_marks
+    .filter((m) => m && new Date(m.created_at).getTime() > cutoff)
+    .slice(-10);
+
+  return gene;
+}
+
+function getEpigeneticBoost(gene, envFingerprint) {
+  if (!gene || !Array.isArray(gene.epigenetic_marks)) return 0;
+  const platform = envFingerprint && envFingerprint.platform ? String(envFingerprint.platform) : '';
+  const arch = envFingerprint && envFingerprint.arch ? String(envFingerprint.arch) : '';
+  const nodeVersion = envFingerprint && envFingerprint.node_version ? String(envFingerprint.node_version) : '';
+  const envContext = [platform, arch, nodeVersion].filter(Boolean).join('/') || 'unknown';
+
+  const mark = gene.epigenetic_marks.find((m) => m && m.context === envContext);
+  return mark ? Number(mark.boost) || 0 : 0;
+}
+
 function buildAutoGene({ signals, intent }) {
   const sigs = Array.isArray(signals) ? Array.from(new Set(signals.map(String))).filter(Boolean) : [];
   const signalKey = computeSignalKey(sigs);
@@ -696,6 +780,7 @@ function buildAutoGene({ signals, intent }) {
       ],
     },
     validation: ['node -e "require(\'./src/gep/solidify\'); console.log(\'ok\')"'],
+    epigenetic_marks: [], // Epigenetic marks: environment-specific expression modifiers
   };
   gene.asset_id = computeAssetId(gene);
   return gene;
@@ -941,6 +1026,16 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
     rollbackNewUntrackedFiles({ repoRoot, baselineUntracked: lastRun && lastRun.baseline_untracked ? lastRun.baseline_untracked : [] });
   }
 
+  // Apply epigenetic marks to the gene based on outcome and environment
+  if (!dryRun && geneUsed && geneUsed.type === 'Gene') {
+    try {
+      applyEpigeneticMarks(geneUsed, envFp, outcomeStatus);
+      upsertGene(geneUsed);
+    } catch (e) {
+      // Non-blocking: epigenetic mark failure must not break solidify
+    }
+  }
+
   if (!dryRun) {
     appendEventJsonl(validationReport);
     if (capsule) upsertCapsule(capsule);
@@ -1062,6 +1157,9 @@ module.exports = {
   analyzeBlastRadiusBreakdown,
   compareBlastEstimate,
   runCanaryCheck,
+  applyEpigeneticMarks,
+  getEpigeneticBoost,
+  buildEpigeneticMark,
   BLAST_RADIUS_HARD_CAP_FILES,
   BLAST_RADIUS_HARD_CAP_LINES,
 };

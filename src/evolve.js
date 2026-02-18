@@ -1195,9 +1195,10 @@ async function run() {
             : [],
         drift: !!IS_RANDOM_DRIFT,
         selected_by: selectedBy,
-        source_type: hubHit && hubHit.hit ? 'reused' : 'generated',
+        source_type: hubHit && hubHit.hit ? (hubHit.mode === 'direct' ? 'reused' : 'reference') : 'generated',
         reused_asset_id: hubHit && hubHit.hit ? (hubHit.asset_id || null) : null,
         reused_source_node: hubHit && hubHit.hit ? (hubHit.source_node_id || null) : null,
+        reused_chain_id: hubHit && hubHit.hit ? (hubHit.chain_id || null) : null,
         baseline_untracked: baselineUntracked,
         baseline_git_head: baselineHead,
         blast_radius_estimate: blastRadiusEstimate,
@@ -1328,7 +1329,7 @@ ${mutationDirective}
       `selected_capsule: ${selectedCapsuleId ? String(selectedCapsuleId) : '(none)'}`,
       `mutation_category: ${mutation && mutation.category ? String(mutation.category) : '(none)'}`,
       `force_innovation: ${forceInnovation ? 'true' : 'false'}`,
-      `source_type: ${hubHit && hubHit.hit ? 'reused' : 'generated'}`,
+      `source_type: ${hubHit && hubHit.hit ? (isDirectReuse ? 'reused' : 'reference') : 'generated'}`,
       `hub_reuse_mode: ${isDirectReuse ? 'direct' : hubMatchedBlock ? 'reference' : 'none'}`,
     ].join('\n');
     console.log(`[THOUGHT_PROCESS]\n${thought}\n[/THOUGHT_PROCESS]`);

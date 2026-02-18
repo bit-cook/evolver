@@ -1081,7 +1081,8 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
     const visibility = String(process.env.EVOLVER_DEFAULT_VISIBILITY || 'public').toLowerCase();
     const minPublishScore = Number(process.env.EVOLVER_MIN_PUBLISH_SCORE) || 0.78;
 
-    // Skip publishing if: disabled, private, reused asset, or below minimum score
+    // Skip publishing if: disabled, private, direct-reused asset, or below minimum score.
+    // 'reference' mode produces a new capsule inspired by hub -- eligible for publish.
     if (autoPublish && visibility === 'public' && sourceType !== 'reused' && (capsule.outcome.score || 0) >= minPublishScore) {
       try {
         const { buildPublishBundle, httpTransportSend } = require('./a2aProtocol');
@@ -1145,7 +1146,7 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
     } else {
       const reason = !autoPublish ? 'auto_publish_disabled'
         : visibility !== 'public' ? 'visibility_private'
-        : sourceType === 'reused' ? 'skip_reused_asset'
+        : sourceType === 'reused' ? 'skip_direct_reused_asset'
         : 'below_min_score';
       publishResult = { attempted: false, reason };
     }

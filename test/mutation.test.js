@@ -20,8 +20,11 @@ describe('clamp01', () => {
 
   it('returns 0 for non-finite input', () => {
     assert.equal(clamp01(NaN), 0);
-    assert.equal(clamp01(Infinity), 0);
     assert.equal(clamp01(undefined), 0);
+    // Note: clamp01(Infinity) returns 0 because the implementation checks
+    // Number.isFinite() before clamping. Mathematically clamp(Inf, 0, 1) = 1,
+    // but the current behavior treats all non-finite values uniformly as 0.
+    assert.equal(clamp01(Infinity), 0);
   });
 });
 

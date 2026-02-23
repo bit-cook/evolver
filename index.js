@@ -116,6 +116,7 @@ async function main() {
         let cycleCount = 0;
 
         while (true) {
+          try {
           cycleCount += 1;
 
           // Ralph-loop gating: do not run a new cycle while previous run is pending solidify.
@@ -148,7 +149,7 @@ async function main() {
             const memMb = process.memoryUsage().rss / 1024 / 1024;
             if (cycleCount >= maxCyclesPerProcess || memMb > maxRssMb) {
               console.log(`[Daemon] Restarting self (cycles=${cycleCount}, rssMb=${memMb.toFixed(0)})`);
-              releaseLock(); // Release before spawning to allow child to acquire
+              releaseLock();
               const spawnOpts = {
                 detached: true,
                 stdio: 'ignore',
@@ -161,11 +162,6 @@ async function main() {
             }
           }
 
-          // Saturation-aware sleep: when the evolver detects it has exhausted innovation
-          // space (consecutive empty cycles), dramatically increase sleep to avoid wasting
-          // resources on no-op cycles. This is the "graceful degradation" mechanism that
-          // Echo-MingXuan lacked -- it kept cycling at full speed after saturation until
-          // load spiked to 1.30 and it crashed.
           let saturationMultiplier = 1;
           try {
             const st1 = readJsonSafe(solidifyStatePath);
@@ -182,6 +178,11 @@ async function main() {
           // Jitter to avoid lockstep restarts.
           const jitter = Math.floor(Math.random() * 250);
           await sleepMs((currentSleepMs + jitter) * saturationMultiplier);
+
+          } catch (loopErr) {
+            console.error('[Daemon] Unexpected loop error (recovering): ' + (loopErr && loopErr.message ? loopErr.message : String(loopErr)));
+            await sleepMs(Math.max(minSleepMs, 10000));
+          }
         }
     } else {
         // Normal Single Run

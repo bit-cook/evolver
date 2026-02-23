@@ -315,9 +315,32 @@ function httpTransportList() {
 
 var _heartbeatTimer = null;
 var _heartbeatStartedAt = null;
+var _heartbeatConsecutiveFailures = 0;
+var _heartbeatTotalSent = 0;
+var _heartbeatTotalFailed = 0;
 
 function getHubUrl() {
   return process.env.A2A_HUB_URL || process.env.EVOMAP_HUB_URL || '';
+}
+
+function sendHelloToHub() {
+  var hubUrl = getHubUrl();
+  if (!hubUrl) return Promise.resolve({ ok: false, error: 'no_hub_url' });
+
+  var endpoint = hubUrl.replace(/\/+$/, '') + '/a2a/hello';
+  var nodeId = getNodeId();
+  var msg = buildHello({ nodeId: nodeId, capabilities: {} });
+  msg.sender_id = nodeId;
+
+  return fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(msg),
+    signal: AbortSignal.timeout(15000),
+  })
+    .then(function (res) { return res.json(); })
+    .then(function (data) { return { ok: true, response: data }; })
+    .catch(function (err) { return { ok: false, error: err.message }; });
 }
 
 function sendHeartbeat() {
@@ -334,6 +357,8 @@ function sendHeartbeat() {
     timestamp: new Date().toISOString(),
   });
 
+  _heartbeatTotalSent++;
+
   return fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -341,26 +366,58 @@ function sendHeartbeat() {
     signal: AbortSignal.timeout(10000),
   })
     .then(function (res) { return res.json(); })
-    .then(function (data) { return { ok: true, response: data }; })
-    .catch(function (err) { return { ok: false, error: err.message }; });
+    .then(function (data) {
+      if (data && data.status === 'unknown_node') {
+        console.warn('[Heartbeat] Node not registered on hub. Sending hello to re-register...');
+        return sendHelloToHub().then(function (helloResult) {
+          if (helloResult.ok) {
+            console.log('[Heartbeat] Re-registered with hub successfully.');
+            _heartbeatConsecutiveFailures = 0;
+          } else {
+            console.warn('[Heartbeat] Re-registration failed: ' + (helloResult.error || 'unknown'));
+          }
+          return { ok: helloResult.ok, response: data, reregistered: helloResult.ok };
+        });
+      }
+      _heartbeatConsecutiveFailures = 0;
+      return { ok: true, response: data };
+    })
+    .catch(function (err) {
+      _heartbeatConsecutiveFailures++;
+      _heartbeatTotalFailed++;
+      if (_heartbeatConsecutiveFailures === 3) {
+        console.warn('[Heartbeat] 3 consecutive failures. Network issue? Last error: ' + err.message);
+      } else if (_heartbeatConsecutiveFailures === 10) {
+        console.warn('[Heartbeat] 10 consecutive failures. Hub may be unreachable. (' + err.message + ')');
+      } else if (_heartbeatConsecutiveFailures % 50 === 0) {
+        console.warn('[Heartbeat] ' + _heartbeatConsecutiveFailures + ' consecutive failures. (' + err.message + ')');
+      }
+      return { ok: false, error: err.message };
+    });
 }
 
 function startHeartbeat(intervalMs) {
   if (_heartbeatTimer) return;
-  var interval = intervalMs || Number(process.env.HEARTBEAT_INTERVAL_MS) || 300000; // default 5min
+  var interval = intervalMs || Number(process.env.HEARTBEAT_INTERVAL_MS) || 120000; // default 2min
   _heartbeatStartedAt = Date.now();
 
-  // Send immediately on start, then repeat
-  sendHeartbeat().then(function (r) {
-    if (r.ok) console.log('[Heartbeat] Connected to hub. Node: ' + getNodeId());
-    else console.warn('[Heartbeat] Initial heartbeat failed: ' + (r.error || 'unknown'));
+  // Register with hub first (hello), then start heartbeat loop
+  sendHelloToHub().then(function (r) {
+    if (r.ok) console.log('[Heartbeat] Registered with hub. Node: ' + getNodeId());
+    else console.warn('[Heartbeat] Hello failed (will retry via heartbeat): ' + (r.error || 'unknown'));
   }).catch(function () {});
+
+  // First heartbeat after a short delay (let hello complete first)
+  setTimeout(function () {
+    sendHeartbeat().then(function (r) {
+      if (r.ok) console.log('[Heartbeat] Connected to hub. Node: ' + getNodeId());
+    }).catch(function () {});
+  }, 5000);
 
   _heartbeatTimer = setInterval(function () {
     sendHeartbeat().catch(function () {});
   }, interval);
 
-  // Don't let the heartbeat timer prevent process exit
   if (_heartbeatTimer.unref) _heartbeatTimer.unref();
 }
 
@@ -369,6 +426,16 @@ function stopHeartbeat() {
     clearInterval(_heartbeatTimer);
     _heartbeatTimer = null;
   }
+}
+
+function getHeartbeatStats() {
+  return {
+    running: !!_heartbeatTimer,
+    uptimeMs: _heartbeatStartedAt ? Date.now() - _heartbeatStartedAt : 0,
+    totalSent: _heartbeatTotalSent,
+    totalFailed: _heartbeatTotalFailed,
+    consecutiveFailures: _heartbeatConsecutiveFailures,
+  };
 }
 
 // --- Transport registry ---
@@ -425,6 +492,8 @@ module.exports = {
   httpTransportReceive,
   httpTransportList,
   sendHeartbeat,
+  sendHelloToHub,
   startHeartbeat,
   stopHeartbeat,
+  getHeartbeatStats,
 };

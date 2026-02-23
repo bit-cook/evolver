@@ -340,6 +340,30 @@ function checkConstraints({ gene, blast, blastRadiusEstimate, repoRoot }) {
     });
   }
 
+  // --- Ethics Committee: constitutional principle enforcement ---
+  var ethicsText = '';
+  if (gene.strategy) {
+    ethicsText += (Array.isArray(gene.strategy) ? gene.strategy.join(' ') : String(gene.strategy)) + ' ';
+  }
+  if (gene.description) ethicsText += String(gene.description) + ' ';
+  if (gene.summary) ethicsText += String(gene.summary) + ' ';
+
+  if (ethicsText.length > 0) {
+    var ethicsBlockPatterns = [
+      { re: /(?:bypass|disable|circumvent|remove)\s+(?:safety|guardrail|security|ethic|constraint|protection)/i, rule: 'safety', msg: 'ethics: strategy attempts to bypass safety mechanisms' },
+      { re: /(?:keylogger|screen\s*capture|webcam\s*hijack|mic(?:rophone)?\s*record)/i, rule: 'human_welfare', msg: 'ethics: covert monitoring tool in strategy' },
+      { re: /(?:social\s+engineering|phishing)\s+(?:attack|template|script)/i, rule: 'human_welfare', msg: 'ethics: social engineering content in strategy' },
+      { re: /(?:exploit|hack)\s+(?:user|human|people|victim)/i, rule: 'human_welfare', msg: 'ethics: human exploitation in strategy' },
+      { re: /(?:hide|conceal|obfuscat)\w*\s+(?:action|behavior|intent|log)/i, rule: 'transparency', msg: 'ethics: strategy conceals actions from audit trail' },
+    ];
+    for (var ei = 0; ei < ethicsBlockPatterns.length; ei++) {
+      if (ethicsBlockPatterns[ei].re.test(ethicsText)) {
+        violations.push(ethicsBlockPatterns[ei].msg);
+        console.error('[Solidify] Ethics violation: ' + ethicsBlockPatterns[ei].msg);
+      }
+    }
+  }
+
   return { ok: violations.length === 0, violations, warnings, blastSeverity };
 }
 

@@ -302,7 +302,6 @@ function checkSystemHealth() {
   // Integration Health Checks (Env Vars)
   try {
     const issues = [];
-    if (!process.env.GEMINI_API_KEY) issues.push('Gemini Key Missing');
 
     // Generic Integration Status Check (Decoupled)
     if (process.env.INTEGRATION_STATUS_CMD) {

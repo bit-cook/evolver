@@ -28,7 +28,8 @@ function getSessionScope() {
   if (!raw) return null;
   // Sanitize: only allow alphanumeric, dash, underscore, dot (prevent path traversal).
   const safe = raw.replace(/[^a-zA-Z0-9_\-\.]/g, '_').slice(0, 128);
-  return safe || null;
+  if (!safe || /^\.{1,2}$/.test(safe) || /\.\./.test(safe)) return null;
+  return safe;
 }
 
 function getEvolutionDir() {

@@ -74,6 +74,7 @@ function computeDriftIntensity(opts) {
 }
 
 function selectGene(genes, signals, opts) {
+  const genesList = Array.isArray(genes) ? genes : [];
   const bannedGeneIds = opts && opts.bannedGeneIds ? opts.bannedGeneIds : new Set();
   const driftEnabled = !!(opts && opts.driftEnabled);
   const preferredGeneId = opts && typeof opts.preferredGeneId === 'string' ? opts.preferredGeneId : null;
@@ -82,14 +83,14 @@ function selectGene(genes, signals, opts) {
   var driftIntensity = computeDriftIntensity({
     driftEnabled: driftEnabled,
     effectivePopulationSize: opts && opts.effectivePopulationSize,
-    genePoolSize: genes ? genes.length : 0,
+    genePoolSize: genesList.length,
   });
   var useDrift = driftEnabled || driftIntensity > 0.15;
 
   var DISTILLED_PREFIX = 'gene_distilled_';
   var DISTILLED_SCORE_FACTOR = 0.8;
 
-  const scored = genes
+  const scored = genesList
     .map(g => {
       var s = scoreGene(g, signals);
       if (s > 0 && g.id && String(g.id).startsWith(DISTILLED_PREFIX)) s *= DISTILLED_SCORE_FACTOR;

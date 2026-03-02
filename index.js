@@ -43,12 +43,16 @@ function acquireLock() {
   try {
     if (fs.existsSync(lockFile)) {
       const pid = parseInt(fs.readFileSync(lockFile, 'utf8').trim(), 10);
-      try {
-        process.kill(pid, 0); // Check if process exists
-        console.log(`[Singleton] Evolver loop already running (PID ${pid}). Exiting.`);
-        return false;
-      } catch (e) {
-        console.log(`[Singleton] Stale lock found (PID ${pid}). Taking over.`);
+      if (!Number.isFinite(pid) || pid <= 0) {
+        console.log('[Singleton] Corrupt lock file (invalid PID). Taking over.');
+      } else {
+        try {
+          process.kill(pid, 0);
+          console.log(`[Singleton] Evolver loop already running (PID ${pid}). Exiting.`);
+          return false;
+        } catch (e) {
+          console.log(`[Singleton] Stale lock found (PID ${pid}). Taking over.`);
+        }
       }
     }
     fs.writeFileSync(lockFile, String(process.pid));
@@ -149,16 +153,20 @@ async function main() {
             const memMb = process.memoryUsage().rss / 1024 / 1024;
             if (cycleCount >= maxCyclesPerProcess || memMb > maxRssMb) {
               console.log(`[Daemon] Restarting self (cycles=${cycleCount}, rssMb=${memMb.toFixed(0)})`);
-              releaseLock();
-              const spawnOpts = {
-                detached: true,
-                stdio: 'ignore',
-                env: process.env,
-                windowsHide: true,
-              };
-              const child = spawn(process.execPath, [__filename, ...args], spawnOpts);
-              child.unref();
-              process.exit(0);
+              try {
+                const spawnOpts = {
+                  detached: true,
+                  stdio: 'ignore',
+                  env: process.env,
+                  windowsHide: true,
+                };
+                const child = spawn(process.execPath, [__filename, ...args], spawnOpts);
+                child.unref();
+                releaseLock();
+                process.exit(0);
+              } catch (spawnErr) {
+                console.error('[Daemon] Spawn failed, continuing current process:', spawnErr.message);
+              }
             }
           }
 

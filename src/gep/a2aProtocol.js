@@ -96,6 +96,9 @@ function getNodeId() {
 // --- Base message builder ---
 
 function buildMessage(params) {
+  if (!params || typeof params !== 'object') {
+    throw new Error('buildMessage requires a params object');
+  }
   var messageType = params.messageType;
   var payload = params.payload;
   var senderId = params.senderId;

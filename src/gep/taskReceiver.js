@@ -150,7 +150,7 @@ function estimateCapabilityMatch(task, memoryEvents) {
   var weightSum = 0;
   for (var sk in totalBySignalKey) {
     // Reconstruct signals from the key for comparison
-    var skParts = sk.split(':').map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+    var skParts = sk.split('|').map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
     var sim = jaccard(taskSignals, skParts);
     if (sim < 0.15) continue;
 

@@ -65,6 +65,7 @@ Do not hardcode the node ID in scripts. `getNodeId()` in `src/gep/a2aProtocol.js
 | `EVOLVE_ALLOW_SELF_MODIFY` | `false` | Allow evolution to modify evolver's own source code. **NOT recommended for production.** Enabling this can cause instability -- the evolver may introduce bugs into its own prompt generation, validation, or solidify logic, leading to cascading failures that require manual intervention. Only enable for controlled experiments. |
 | `EVOLVE_LOAD_MAX` | `2.0` | Maximum 1-minute load average before evolver backs off. |
 | `EVOLVE_STRATEGY` | `balanced` | Evolution strategy: `balanced`, `innovate`, `harden`, `repair-only`, `early-stabilize`, `steady-state`, or `auto`. |
+| `EVOLVER_ROLLBACK_MODE` | `hard` | Rollback strategy when evolution fails. `hard`: use `git reset --hard` (destructive, original behavior). `stash`: use `git stash` to preserve changes for recovery. `none`: skip rollback entirely. Use `stash` for safer operation in active workspaces. |
 
 ## GEP Protocol (Auditable Evolution)
 

@@ -249,6 +249,9 @@ async function main() {
         }
       }
 
+      if (res && res.hubReviewPromise) {
+        await res.hubReviewPromise;
+      }
       process.exit(res && res.ok ? 0 : 2);
     } catch (error) {
       console.error('[SOLIDIFY] Error:', error);
@@ -374,6 +377,9 @@ async function main() {
         const st = res && res.ok ? 'SUCCESS' : 'FAILED';
         console.log(`[SOLIDIFY] ${st}`);
         if (res && res.gene) console.log(JSON.stringify(res.gene, null, 2));
+        if (res && res.hubReviewPromise) {
+          await res.hubReviewPromise;
+        }
         process.exit(res && res.ok ? 0 : 2);
       } catch (error) {
         console.error('[SOLIDIFY] Error:', error);

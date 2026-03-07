@@ -1623,12 +1623,13 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
 
   // --- Auto Hub Review: rate fetched assets based on solidify outcome ---
   // When this cycle reused a Hub asset, submit a usage-verified review.
-  // Fire-and-forget: review submission must never block or affect solidify result.
+  // The promise is returned so callers can await it before process.exit().
   var hubReviewResult = null;
+  var hubReviewPromise = null;
   if (!dryRun && reusedAssetId && (sourceType === 'reused' || sourceType === 'reference')) {
     try {
       var { submitHubReview } = require('./hubReview');
-      var reviewPromise = submitHubReview({
+      hubReviewPromise = submitHubReview({
         reusedAssetId: reusedAssetId,
         sourceType: sourceType,
         outcome: event.outcome,
@@ -1638,23 +1639,25 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
         constraintCheck: constraintCheck,
         runId: lastRun && lastRun.run_id ? lastRun.run_id : null,
       });
-      if (reviewPromise && typeof reviewPromise.then === 'function') {
-        reviewPromise
+      if (hubReviewPromise && typeof hubReviewPromise.then === 'function') {
+        hubReviewPromise = hubReviewPromise
           .then(function (r) {
             hubReviewResult = r;
             if (r && r.submitted) {
               console.log('[HubReview] Review submitted successfully (rating=' + r.rating + ').');
             }
+            return r;
           })
           .catch(function (err) {
             console.log('[HubReview] Error (non-fatal): ' + (err && err.message ? err.message : err));
+            return null;
           });
       }
     } catch (e) {
       console.log('[HubReview] Error (non-fatal): ' + e.message);
     }
   }
-  return { ok: success, event, capsule, gene: geneUsed, constraintCheck, validation, validationReport, blast, publishResult, antiPatternPublishResult, taskCompleteResult, hubReviewResult };
+  return { ok: success, event, capsule, gene: geneUsed, constraintCheck, validation, validationReport, blast, publishResult, antiPatternPublishResult, taskCompleteResult, hubReviewResult, hubReviewPromise };
 }
 
 module.exports = {
